@@ -65,9 +65,18 @@ export default function AdminDashboardPage() {
             </Button>
 
           
-          <Button variant="ghost" className="justify-start gap-2">
-            <Users className="h-4 w-4" /> Participant Management
-          </Button>
+       <Button
+              variant="ghost"
+              className="justify-start gap-2"
+              asChild
+            >
+              <Link href="/admin/hikers">
+                <QrCode className="h-4 w-4" />
+                Participant Management
+              </Link>
+            </Button>
+
+
 
             <Button
               variant="ghost"
@@ -80,9 +89,18 @@ export default function AdminDashboardPage() {
               </Link>
             </Button>
 
-          <Button variant="ghost" className="justify-start gap-2">
-            <MapPin className="h-4 w-4" /> Checkpoint Management
-          </Button>
+
+
+          <Button
+              variant="ghost"
+              className="justify-start gap-2"
+              asChild
+            >
+              <Link href="/admin/checkpoints">
+                <QrCode className="h-4 w-4" />
+                Checkpoint Management
+              </Link>
+            </Button>
 
           
            <Button
@@ -100,13 +118,6 @@ export default function AdminDashboardPage() {
             <BarChart3 className="h-4 w-4" /> Reports & Analytics
           </Button>
         </nav>
-
-        <div className="mt-auto">
-          <Separator className="my-4" />
-          <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground">
-            <LogOut className="h-4 w-4" /> Logout
-          </Button>
-        </div>
       </aside>
 
       {/* MAIN CONTENT */}
