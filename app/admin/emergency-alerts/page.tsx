@@ -2,7 +2,29 @@
 
 import { useEffect, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import { ArrowLeft, Bell, BellOff, MapPin, User, Clock, AlertTriangle, CheckCircle, Navigation, Volume2, VolumeX, UserCheck, Activity, Radio, Satellite } from "lucide-react"
+import {
+  ArrowLeft,
+  Bell,
+  BellOff,
+  MapPin,
+  User,
+  Clock,
+  AlertTriangle,
+  CheckCircle,
+  Navigation,
+  Volume2,
+  VolumeX,
+  UserCheck,
+  Activity,
+  Radio,
+  Satellite,
+  Shield,
+  Phone,
+  RefreshCw,
+  Siren,
+  ChevronRight,
+  Zap,
+} from "lucide-react"
 
 type Hiker = {
   id: number
@@ -21,12 +43,48 @@ type EmergencyAlert = {
   hikers: Hiker | null
 }
 
+type EmergencyAlertPayload = Omit<EmergencyAlert, "hikers"> & {
+  hikers?: Hiker | null
+}
+
+/* ── helper: time-ago ── */
+function formatTimeAgo(dateString: string) {
+  const diff = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000)
+  if (diff < 60) return "Just now"
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+/* ── helper: emergency meta ── */
+function getEmergencyMeta(type: string) {
+  switch (type.toLowerCase()) {
+    case "critical":
+      return { color: "#ef4444", bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.35)", label: "CRITICAL", icon: "🆘", badge: "var(--red)" }
+    case "medical":
+      return { color: "#f97316", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.35)", label: "MEDICAL", icon: "🏥", badge: "var(--orange)" }
+    case "injury":
+      return { color: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.35)", label: "INJURY", icon: "🤕", badge: "var(--amber)" }
+    case "lost":
+      return { color: "#3b82f6", bg: "rgba(59,130,246,0.12)", border: "rgba(59,130,246,0.35)", label: "LOST", icon: "🧭", badge: "var(--blue)" }
+    default:
+      return { color: "#ef4444", bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.35)", label: type.toUpperCase(), icon: "🚨", badge: "var(--red)" }
+  }
+}
+
 export default function EmergencyAlertsPage() {
   const [alerts, setAlerts] = useState<EmergencyAlert[]>([])
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
+  const [now, setNow] = useState(new Date())
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  /* tick clock */
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
 
   /* 🔓 LOAD SOUND SETTING */
   useEffect(() => {
@@ -55,25 +113,31 @@ export default function EmergencyAlertsPage() {
           table: "emergency_alerts",
         },
         async (payload) => {
-          const newAlert = payload.new as any
-          
-          // Fetch hiker data for the new alert
+          const newAlert = payload.new as EmergencyAlertPayload
+          let hiker: Hiker | null = newAlert.hikers ?? null
+
           if (newAlert.hiker_id) {
-            const { data: hikerData } = await supabase
+            const { data: hikerData, error: hikerError } = await supabase
               .from("hikers")
               .select("id, name")
               .eq("id", newAlert.hiker_id)
               .single()
-            
-            newAlert.hikers = hikerData
+
+            if (hikerError) {
+              console.error("FETCH HIKER ERROR:", hikerError)
+            } else {
+              hiker = hikerData
+            }
           }
-          
-          setAlerts(prev => {
-            if (prev.some(a => a.id === newAlert.id)) return prev
-            return [newAlert, ...prev]
+
+          const alert: EmergencyAlert = { ...newAlert, hikers: hiker }
+
+          setAlerts((prev) => {
+            if (prev.some((a) => a.id === alert.id)) return prev
+            return [alert, ...prev]
           })
 
-          if (soundEnabled && newAlert.status === "NEW") {
+          if (soundEnabled && alert.status === "NEW") {
             if (audioRef.current) {
               audioRef.current.currentTime = 0
               audioRef.current.play().catch(() => {})
@@ -94,13 +158,7 @@ export default function EmergencyAlertsPage() {
     try {
       const { data, error } = await supabase
         .from("emergency_alerts")
-        .select(`
-          *,
-          hikers (
-            id,
-            name
-          )
-        `)
+        .select(`*, hikers (id, name)`)
         .eq("status", "NEW")
         .order("created_at", { ascending: false })
 
@@ -108,11 +166,7 @@ export default function EmergencyAlertsPage() {
         console.error("FETCH ERROR:", error)
         return
       }
-
-      if (data) {
-        setAlerts(data)
-      }
-      
+      if (data) setAlerts(data)
     } catch (error) {
       console.error("Unexpected error:", error)
     } finally {
@@ -130,10 +184,7 @@ export default function EmergencyAlertsPage() {
   async function acknowledgeAlert(id: number) {
     const { error } = await supabase
       .from("emergency_alerts")
-      .update({
-        status: "ACKNOWLEDGED",
-        acknowledged_at: new Date().toISOString(),
-      })
+      .update({ status: "ACKNOWLEDGED", acknowledged_at: new Date().toISOString() })
       .eq("id", id)
 
     if (error) {
@@ -142,7 +193,7 @@ export default function EmergencyAlertsPage() {
       return
     }
 
-    setAlerts(prev => prev.filter(a => a.id !== id))
+    setAlerts((prev) => prev.filter((a) => a.id !== id))
 
     if (audioRef.current && alerts.length <= 1) {
       audioRef.current.pause()
@@ -150,370 +201,1244 @@ export default function EmergencyAlertsPage() {
     }
   }
 
-  const getEmergencyColor = (type: string) => {
-    switch(type.toLowerCase()) {
-      case 'critical': return 'from-red-500 to-red-600'
-      case 'medical': return 'from-orange-500 to-orange-600'
-      case 'injury': return 'from-amber-500 to-amber-600'
-      case 'lost': return 'from-blue-500 to-blue-600'
-      default: return 'from-red-500 to-red-600'
-    }
-  }
-
-  const getEmergencyBadgeColor = (type: string) => {
-    switch(type.toLowerCase()) {
-      case 'critical': return 'bg-gradient-to-r from-red-500 to-red-600'
-      case 'medical': return 'bg-gradient-to-r from-orange-500 to-orange-600'
-      case 'injury': return 'bg-gradient-to-r from-amber-500 to-amber-600'
-      case 'lost': return 'bg-gradient-to-r from-blue-500 to-blue-600'
-      default: return 'bg-gradient-to-r from-red-500 to-red-600'
-    }
-  }
-
-  const getEmergencyIcon = (type: string) => {
-    switch(type.toLowerCase()) {
-      case 'critical': return '🆘'
-      case 'medical': return '🏥'
-      case 'injury': return '🤕'
-      case 'lost': return '🧭'
-      default: return '🚨'
-    }
-  }
-
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-    
-    if (diffInSeconds < 60) return 'Just now'
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`
-    return `${Math.floor(diffInSeconds / 86400)} days ago`
-  }
+  const hasAlerts = alerts.length > 0
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white p-4 md:p-6">
-      {/* Background Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-0 w-96 h-96 bg-red-500/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl translate-x-1/3 translate-y-1/3"></div>
-      </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap');
 
-      {/* Header */}
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <a 
-              href="/home" 
-              className="inline-flex items-center gap-2 text-gray-300 hover:text-white transition-colors bg-gray-800/50 hover:bg-gray-700/50 p-3 rounded-xl backdrop-blur-sm"
+        :root {
+          --red: #ef4444;
+          --red-dim: rgba(239,68,68,0.15);
+          --orange: #f97316;
+          --amber: #f59e0b;
+          --amber-dim: rgba(245,158,11,0.12);
+          --blue: #3b82f6;
+          --green: #22c55e;
+          --green-forest: #166534;
+          --green-muted: #15803d;
+
+          --bg: #0b0f0d;
+          --surface: #111914;
+          --surface-2: #161d18;
+          --surface-3: #1c2620;
+          --border: rgba(255,255,255,0.07);
+          --border-active: rgba(255,255,255,0.12);
+
+          --text: #f0f4f1;
+          --text-muted: #7a9080;
+          --text-dim: #4a5e52;
+
+          --mono: 'Space Mono', monospace;
+          --sans: 'DM Sans', sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        .tg-root {
+          font-family: var(--sans);
+          background: var(--bg);
+          color: var(--text);
+          min-height: 100vh;
+        }
+
+        /* ── SCANLINE texture ── */
+        .tg-root::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          background: repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 2px,
+            rgba(0,0,0,0.06) 2px,
+            rgba(0,0,0,0.06) 4px
+          );
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        /* ── TOPBAR ── */
+        .tg-topbar {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          background: rgba(11,15,13,0.92);
+          backdrop-filter: blur(16px);
+          border-bottom: 1px solid var(--border);
+        }
+
+        .tg-topbar-inner {
+          max-width: 1440px;
+          margin: 0 auto;
+          padding: 0 24px;
+          height: 64px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+        }
+
+        .tg-back {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--text-muted);
+          text-decoration: none;
+          font-size: 13px;
+          font-weight: 500;
+          letter-spacing: 0.02em;
+          transition: color 0.15s;
+          padding: 6px 10px;
+          border-radius: 6px;
+          border: 1px solid transparent;
+        }
+        .tg-back:hover {
+          color: var(--text);
+          border-color: var(--border-active);
+          background: var(--surface-2);
+        }
+
+        .tg-brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .tg-brand-logo {
+          width: 32px;
+          height: 32px;
+          background: linear-gradient(135deg, #166534, #15803d);
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+        }
+
+        .tg-brand-name {
+          font-family: var(--mono);
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          color: var(--text);
+        }
+
+        .tg-brand-sub {
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          color: var(--text-dim);
+          font-family: var(--mono);
+          text-transform: uppercase;
+        }
+
+        .tg-topbar-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .tg-live-pill {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-family: var(--mono);
+          font-size: 11px;
+          color: var(--green);
+          background: rgba(34,197,94,0.08);
+          border: 1px solid rgba(34,197,94,0.2);
+          padding: 4px 10px;
+          border-radius: 20px;
+          letter-spacing: 0.06em;
+        }
+
+        .tg-live-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--green);
+          animation: pulse-dot 1.5s ease infinite;
+        }
+
+        @keyframes pulse-dot {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(0.7); }
+        }
+
+        .tg-clock {
+          font-family: var(--mono);
+          font-size: 12px;
+          color: var(--text-muted);
+          letter-spacing: 0.04em;
+        }
+
+        .tg-sound-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 14px;
+          border-radius: 8px;
+          border: 1px solid;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          cursor: pointer;
+          transition: all 0.15s;
+          font-family: var(--sans);
+        }
+
+        .tg-sound-btn.on {
+          background: rgba(34,197,94,0.1);
+          border-color: rgba(34,197,94,0.3);
+          color: var(--green);
+        }
+        .tg-sound-btn.on:hover {
+          background: rgba(34,197,94,0.18);
+        }
+        .tg-sound-btn.off {
+          background: var(--surface-2);
+          border-color: var(--border);
+          color: var(--text-muted);
+        }
+        .tg-sound-btn.off:hover {
+          border-color: var(--border-active);
+          color: var(--text);
+        }
+
+        /* ── MAIN ── */
+        .tg-main {
+          max-width: 1440px;
+          margin: 0 auto;
+          padding: 32px 24px 64px;
+          position: relative;
+          z-index: 1;
+        }
+
+        /* ── PAGE HEADER ── */
+        .tg-page-header {
+          margin-bottom: 32px;
+        }
+
+        .tg-page-header-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+
+        .tg-incident-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-family: var(--mono);
+          font-size: 10px;
+          letter-spacing: 0.1em;
+          color: var(--text-dim);
+          text-transform: uppercase;
+          margin-bottom: 10px;
+        }
+
+        .tg-page-title {
+          font-size: 28px;
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          line-height: 1.1;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .tg-title-alert-chip {
+          font-size: 11px;
+          font-family: var(--mono);
+          letter-spacing: 0.08em;
+          background: var(--red-dim);
+          color: var(--red);
+          border: 1px solid rgba(239,68,68,0.3);
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-weight: 700;
+          vertical-align: middle;
+        }
+
+        .tg-page-subtitle {
+          margin-top: 6px;
+          font-size: 13px;
+          color: var(--text-muted);
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .tg-page-subtitle span {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        }
+
+        .tg-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .tg-refresh-btn {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 8px 16px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          color: var(--text-muted);
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s;
+          font-family: var(--sans);
+        }
+        .tg-refresh-btn:hover:not(:disabled) {
+          background: var(--surface-3);
+          border-color: var(--border-active);
+          color: var(--text);
+        }
+        .tg-refresh-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .spin { animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── STAT CARDS ── */
+        .tg-stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+          margin-bottom: 32px;
+        }
+
+        @media (max-width: 900px) {
+          .tg-stats { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 500px) {
+          .tg-stats { grid-template-columns: 1fr; }
+        }
+
+        .tg-stat-card {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 20px;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          transition: border-color 0.2s;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .tg-stat-card::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 2px;
+          background: var(--accent-color, transparent);
+          border-radius: 12px 12px 0 0;
+        }
+
+        .tg-stat-card:hover {
+          border-color: var(--border-active);
+        }
+
+        .tg-stat-icon {
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .tg-stat-label {
+          font-size: 11px;
+          letter-spacing: 0.07em;
+          text-transform: uppercase;
+          color: var(--text-dim);
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+
+        .tg-stat-value {
+          font-family: var(--mono);
+          font-size: 24px;
+          font-weight: 700;
+          line-height: 1;
+          margin-bottom: 4px;
+        }
+
+        .tg-stat-note {
+          font-size: 11px;
+          color: var(--text-dim);
+        }
+
+        /* ── SECTION HEADER ── */
+        .tg-section-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 16px;
+        }
+
+        .tg-section-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          font-family: var(--mono);
+        }
+
+        .tg-section-count {
+          font-size: 11px;
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-family: var(--mono);
+        }
+
+        /* ── EMPTY STATE ── */
+        .tg-empty {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 64px 32px;
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .tg-empty-icon {
+          width: 72px;
+          height: 72px;
+          border-radius: 18px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 4px;
+        }
+
+        .tg-empty-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--text);
+        }
+
+        .tg-empty-sub {
+          font-size: 13px;
+          color: var(--text-muted);
+          max-width: 360px;
+          line-height: 1.6;
+        }
+
+        /* ── ALERT CARD ── */
+        .tg-alert-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .tg-alert-card {
+          background: var(--surface);
+          border-radius: 14px;
+          border: 1px solid;
+          overflow: hidden;
+          transition: all 0.2s;
+          position: relative;
+        }
+
+        .tg-alert-card:hover {
+          transform: translateY(-1px);
+        }
+
+        .tg-alert-card-accent {
+          position: absolute;
+          left: 0; top: 0; bottom: 0;
+          width: 4px;
+          border-radius: 14px 0 0 14px;
+        }
+
+        .tg-alert-inner {
+          padding: 20px 20px 20px 28px;
+          display: flex;
+          gap: 20px;
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+
+        @media (max-width: 768px) {
+          .tg-alert-inner { flex-direction: column; }
+        }
+
+        .tg-alert-icon-col {
+          flex-shrink: 0;
+        }
+
+        .tg-alert-type-icon {
+          width: 52px;
+          height: 52px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 22px;
+          border: 1px solid;
+          position: relative;
+        }
+
+        .tg-alert-pulse {
+          position: absolute;
+          inset: -4px;
+          border-radius: 16px;
+          border: 1px solid;
+          animation: ring-pulse 2s ease-out infinite;
+        }
+
+        @keyframes ring-pulse {
+          0% { opacity: 0.6; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.25); }
+        }
+
+        .tg-alert-info {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .tg-alert-badges {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 14px;
+          align-items: center;
+        }
+
+        .tg-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 11px;
+          font-weight: 700;
+          font-family: var(--mono);
+          letter-spacing: 0.06em;
+          padding: 4px 10px;
+          border-radius: 5px;
+          border: 1px solid;
+          text-transform: uppercase;
+        }
+
+        .tg-alert-id {
+          font-family: var(--mono);
+          font-size: 11px;
+          color: var(--text-dim);
+          margin-left: auto;
+        }
+
+        .tg-alert-meta-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 10px;
+          margin-bottom: 14px;
+        }
+
+        .tg-meta-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 10px 12px;
+        }
+
+        .tg-meta-icon {
+          width: 32px;
+          height: 32px;
+          border-radius: 7px;
+          background: var(--surface-3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .tg-meta-label {
+          font-size: 10px;
+          letter-spacing: 0.07em;
+          text-transform: uppercase;
+          color: var(--text-dim);
+          font-weight: 600;
+          margin-bottom: 3px;
+        }
+
+        .tg-meta-value {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text);
+          font-family: var(--mono);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .tg-meta-sub {
+          font-size: 11px;
+          color: var(--text-muted);
+          font-family: var(--sans);
+          font-weight: 400;
+        }
+
+        .tg-alert-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .tg-btn-navigate {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 18px;
+          background: rgba(59,130,246,0.1);
+          border: 1px solid rgba(59,130,246,0.3);
+          color: #60a5fa;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          cursor: pointer;
+          font-family: var(--sans);
+          transition: all 0.15s;
+        }
+        .tg-btn-navigate:hover {
+          background: rgba(59,130,246,0.18);
+          border-color: rgba(59,130,246,0.5);
+          color: #93c5fd;
+        }
+
+        /* ── ACTION PANEL ── */
+        .tg-action-panel {
+          flex-shrink: 0;
+          width: 240px;
+          background: var(--surface-2);
+          border-left: 1px solid var(--border);
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          align-self: stretch;
+        }
+
+        @media (max-width: 900px) {
+          .tg-alert-inner-wrap { flex-direction: column !important; }
+          .tg-action-panel {
+            width: 100%;
+            border-left: none;
+            border-top: 1px solid var(--border);
+          }
+        }
+
+        .tg-action-panel-title {
+          font-size: 10px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: var(--text-dim);
+          font-weight: 700;
+          font-family: var(--mono);
+        }
+
+        .tg-action-panel-desc {
+          font-size: 12px;
+          color: var(--text-muted);
+          line-height: 1.5;
+        }
+
+        .tg-btn-ack {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          width: 100%;
+          padding: 12px 20px;
+          background: linear-gradient(135deg, #166534, #15803d);
+          border: 1px solid rgba(34,197,94,0.25);
+          color: #fff;
+          border-radius: 10px;
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          cursor: pointer;
+          font-family: var(--sans);
+          transition: all 0.15s;
+          box-shadow: 0 4px 16px rgba(22,101,52,0.3);
+        }
+        .tg-btn-ack:hover {
+          background: linear-gradient(135deg, #15803d, #16a34a);
+          box-shadow: 0 6px 20px rgba(22,101,52,0.45);
+          transform: translateY(-1px);
+        }
+        .tg-btn-ack:active {
+          transform: translateY(0);
+        }
+
+        .tg-alert-id-small {
+          font-family: var(--mono);
+          font-size: 10px;
+          color: var(--text-dim);
+          text-align: center;
+          letter-spacing: 0.05em;
+        }
+
+        /* ── LOADING ── */
+        .tg-loading {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 64px 32px;
+          gap: 16px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+        }
+
+        .tg-spinner {
+          width: 40px;
+          height: 40px;
+          border: 2px solid var(--border);
+          border-top-color: var(--red);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+
+        /* ── FOOTER ── */
+        .tg-footer {
+          margin-top: 40px;
+          padding-top: 24px;
+          border-top: 1px solid var(--border);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+
+        .tg-footer-status {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 13px;
+        }
+
+        .tg-footer-status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        .tg-footer-right {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          font-size: 12px;
+          color: var(--text-dim);
+          font-family: var(--mono);
+        }
+
+        .tg-footer-chip {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        /* ── SIREN BAR (when alerts active) ── */
+        .tg-siren-bar {
+          background: linear-gradient(90deg, rgba(239,68,68,0.08), rgba(239,68,68,0.14), rgba(239,68,68,0.08));
+          border-top: 1px solid rgba(239,68,68,0.25);
+          border-bottom: 1px solid rgba(239,68,68,0.25);
+          padding: 10px 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          font-family: var(--mono);
+          font-size: 12px;
+          color: var(--red);
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          font-weight: 700;
+          animation: siren-flash 2s ease infinite;
+        }
+
+        @keyframes siren-flash {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+
+        .tg-coord {
+          font-family: var(--mono);
+          font-size: 12px;
+          color: var(--text-muted);
+          display: block;
+          margin-top: 2px;
+        }
+      `}</style>
+
+      <div className="tg-root">
+        {/* ── SIREN BAR ── */}
+        {hasAlerts && (
+          <div className="tg-siren-bar">
+            <AlertTriangle size={14} />
+            {alerts.length} active emergency{alerts.length !== 1 ? "ies" : ""} — immediate attention required
+            <AlertTriangle size={14} />
+          </div>
+        )}
+
+        {/* ── TOPBAR ── */}
+        <header className="tg-topbar">
+          <div className="tg-topbar-inner">
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <a href="/home" className="tg-back">
+                <ArrowLeft size={15} />
+                Back
+              </a>
+              <div style={{ width: 1, height: 24, background: "var(--border)" }} />
+              <div className="tg-brand">
+                <div className="tg-brand-logo">🏔️</div>
+                <div>
+                  <div className="tg-brand-name">TRAILGUARD</div>
+                  <div className="tg-brand-sub">Gunung Ledang · SAR</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="tg-topbar-right">
+              <div className="tg-live-pill">
+                <div className="tg-live-dot" />
+                LIVE
+              </div>
+              <div className="tg-clock">
+                {now.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </div>
+              <button
+                className={`tg-sound-btn ${soundEnabled ? "on" : "off"}`}
+                onClick={() => {
+                  const newState = !soundEnabled
+                  setSoundEnabled(newState)
+                  localStorage.setItem("soundEnabled", newState.toString())
+                  if (newState) {
+                    audioRef.current?.play().catch(() => {})
+                  } else {
+                    audioRef.current?.pause()
+                  }
+                }}
+              >
+                {soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                {soundEnabled ? "Alarm ON" : "Alarm OFF"}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* ── MAIN CONTENT ── */}
+        <main className="tg-main">
+
+          {/* ── PAGE HEADER ── */}
+          <div className="tg-page-header">
+            <div className="tg-page-header-top">
+              <div>
+                <div className="tg-incident-badge">
+                  <Shield size={11} />
+                  Emergency Operations Center
+                  <ChevronRight size={11} />
+                  Incident Monitor
+                </div>
+                <h1 className="tg-page-title">
+                  Emergency Alerts
+                  {hasAlerts && (
+                    <span className="tg-title-alert-chip">
+                      {alerts.length} ACTIVE
+                    </span>
+                  )}
+                </h1>
+                <div className="tg-page-subtitle">
+                  <span><Satellite size={12} style={{ color: "var(--blue)" }} />Real-time hiker tracking</span>
+                  <span><Radio size={12} style={{ color: "var(--green)" }} />Supabase live channel</span>
+                  <span><MapPin size={12} style={{ color: "var(--amber)" }} />Gunung Ledang, Johor</span>
+                </div>
+              </div>
+              <div className="tg-header-actions">
+                <button
+                  className="tg-refresh-btn"
+                  onClick={fetchAlerts}
+                  disabled={isLoading}
+                >
+                  <RefreshCw size={13} className={isLoading ? "spin" : ""} />
+                  {isLoading ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── STAT CARDS ── */}
+          <div className="tg-stats">
+            {/* Active Alerts */}
+            <div
+              className="tg-stat-card"
+              style={{
+                "--accent-color": hasAlerts ? "var(--red)" : "var(--green)",
+                borderColor: hasAlerts ? "rgba(239,68,68,0.25)" : "var(--border)",
+              } as React.CSSProperties}
             >
-              <ArrowLeft className="w-5 h-5" />
-            </a>
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-red-400 via-orange-400 to-red-400 bg-clip-text text-transparent">
-                Emergency Alert
-              </h1>
-              <p className="text-gray-400 flex items-center gap-2">
-                <Radio className="w-4 h-4 text-green-400 animate-pulse" />
-                <Satellite className="w-4 h-4 text-blue-400 ml-2" />
-              </p>
+              <div
+                className="tg-stat-icon"
+                style={{
+                  background: hasAlerts ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+                }}
+              >
+                <Bell size={20} color={hasAlerts ? "var(--red)" : "var(--green)"} />
+              </div>
+              <div>
+                <div className="tg-stat-label">Active Alerts</div>
+                <div className="tg-stat-value" style={{ color: hasAlerts ? "var(--red)" : "var(--green)" }}>
+                  {alerts.length}
+                </div>
+                <div className="tg-stat-note">{hasAlerts ? "Require response" : "All clear"}</div>
+              </div>
+            </div>
+
+            {/* Hikers tracked */}
+            <div className="tg-stat-card" style={{ "--accent-color": "var(--blue)" } as React.CSSProperties}>
+              <div className="tg-stat-icon" style={{ background: "rgba(59,130,246,0.1)" }}>
+                <UserCheck size={20} color="var(--blue)" />
+              </div>
+              <div>
+                <div className="tg-stat-label">Hikers in Distress</div>
+                <div className="tg-stat-value" style={{ color: "var(--blue)" }}>
+                  {new Set(alerts.map((a) => a.hiker_id)).size}
+                </div>
+                <div className="tg-stat-note">Unique individuals</div>
+              </div>
+            </div>
+
+            {/* Latest */}
+            <div className="tg-stat-card" style={{ "--accent-color": "var(--amber)" } as React.CSSProperties}>
+              <div className="tg-stat-icon" style={{ background: "var(--amber-dim)" }}>
+                <Clock size={20} color="var(--amber)" />
+              </div>
+              <div>
+                <div className="tg-stat-label">Latest Alert</div>
+                <div className="tg-stat-value" style={{ color: "var(--amber)", fontSize: 18 }}>
+                  {alerts.length > 0
+                    ? new Date(alerts[0].created_at).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit" })
+                    : "—"}
+                </div>
+                <div className="tg-stat-note">
+                  {alerts.length > 0 ? formatTimeAgo(alerts[0].created_at) : "No recent alerts"}
+                </div>
+              </div>
+            </div>
+
+            {/* System */}
+            <div className="tg-stat-card" style={{ "--accent-color": "rgba(34,197,94,0.5)" } as React.CSSProperties}>
+              <div className="tg-stat-icon" style={{ background: "rgba(34,197,94,0.08)" }}>
+                <Activity size={20} color="var(--green)" />
+              </div>
+              <div>
+                <div className="tg-stat-label">System</div>
+                <div className="tg-stat-value" style={{ color: "var(--green)", fontSize: 16 }}>
+                  {soundEnabled ? "ACTIVE" : "MUTED"}
+                </div>
+                <div className="tg-stat-note">Alarm {soundEnabled ? "enabled" : "silenced"}</div>
+              </div>
             </div>
           </div>
 
-          {/* Sound Toggle */}
-          <button
-            onClick={() => {
-              const newState = !soundEnabled
-              setSoundEnabled(newState)
-              localStorage.setItem("soundEnabled", newState.toString())
-              if (newState) {
-                audioRef.current?.play().catch(() => {})
-              } else {
-                audioRef.current?.pause()
-              }
-            }}
-            className={`flex items-center gap-3 px-5 py-3 rounded-xl font-semibold transition-all backdrop-blur-sm ${
-              soundEnabled 
-                ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/20' 
-                : 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700'
-            }`}
-          >
-            {soundEnabled ? (
-              <>
-                <Volume2 className="w-5 h-5" />
-                <span>Alarm ON</span>
-              </>
+          {/* ── ALERTS SECTION ── */}
+          <div className="tg-section-header">
+            <div className="tg-section-title">
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: hasAlerts ? "var(--red)" : "var(--green)",
+                  animation: hasAlerts ? "pulse-dot 1.5s ease infinite" : "none",
+                }}
+              />
+              Active Emergencies
+              {hasAlerts && (
+                <span
+                  className="tg-section-count"
+                  style={{
+                    background: "var(--red-dim)",
+                    color: "var(--red)",
+                    border: "1px solid rgba(239,68,68,0.3)",
+                  }}
+                >
+                  {alerts.length} pending
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="tg-alert-list">
+            {isLoading ? (
+              <div className="tg-loading">
+                <div className="tg-spinner" />
+                <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--text-muted)", letterSpacing: "0.06em" }}>
+                  LOADING EMERGENCY DATA…
+                </div>
+              </div>
+            ) : !hasAlerts ? (
+              <div className="tg-empty">
+                <div className="tg-empty-icon">
+                  <BellOff size={32} color="var(--text-dim)" />
+                </div>
+                <div className="tg-empty-title">All Systems Clear</div>
+                <div className="tg-empty-sub">
+                  No active emergency alerts. Monitoring systems are fully operational and tracking all registered hikers on Gunung Ledang.
+                </div>
+              </div>
             ) : (
-              <>
-                <VolumeX className="w-5 h-5" />
-                <span>Alarm OFF</span>
-              </>
-            )}
-          </button>
-        </div>
+              alerts.map((alert) => {
+                const meta = getEmergencyMeta(alert.emergency_type)
+                return (
+                  <div
+                    key={alert.id}
+                    className="tg-alert-card"
+                    style={{
+                      borderColor: meta.border,
+                      background: `linear-gradient(135deg, var(--surface), var(--surface-2))`,
+                    }}
+                  >
+                    {/* left accent bar */}
+                    <div className="tg-alert-card-accent" style={{ background: meta.color }} />
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-gray-800/30 backdrop-blur-sm rounded-2xl p-5 border border-gray-700/50 hover:border-red-500/30 transition-all group">
-            <div className="flex items-center justify-between">
+                    <div
+                      className="tg-alert-inner-wrap"
+                      style={{ display: "flex", alignItems: "stretch" }}
+                    >
+                      {/* ── LEFT: Alert Info ── */}
+                      <div className="tg-alert-inner" style={{ flex: 1 }}>
+                        <div className="tg-alert-icon-col">
+                          <div
+                            className="tg-alert-type-icon"
+                            style={{
+                              background: meta.bg,
+                              borderColor: meta.border,
+                            }}
+                          >
+                            {meta.icon}
+                            <div
+                              className="tg-alert-pulse"
+                              style={{ borderColor: meta.color }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="tg-alert-info">
+                          {/* Badges Row */}
+                          <div className="tg-alert-badges">
+                            <span
+                              className="tg-badge"
+                              style={{
+                                color: meta.color,
+                                borderColor: meta.border,
+                                background: meta.bg,
+                              }}
+                            >
+                              <Zap size={10} />
+                              {meta.label}
+                            </span>
+
+                            <span
+                              className="tg-badge"
+                              style={{
+                                color: "var(--amber)",
+                                borderColor: "rgba(245,158,11,0.3)",
+                                background: "rgba(245,158,11,0.08)",
+                              }}
+                            >
+                              {alert.status}
+                            </span>
+
+                            <span
+                              className="tg-badge"
+                              style={{
+                                color: "var(--blue)",
+                                borderColor: "rgba(59,130,246,0.25)",
+                                background: "rgba(59,130,246,0.08)",
+                              }}
+                            >
+                              <User size={9} />
+                              {alert.hikers?.name ?? "Unknown Hiker"}
+                            </span>
+
+                            <span className="tg-alert-id">#{alert.id}</span>
+                          </div>
+
+                          {/* Meta Grid */}
+                          <div className="tg-alert-meta-grid">
+                            {/* Time */}
+                            <div className="tg-meta-item">
+                              <div className="tg-meta-icon">
+                                <Clock size={14} color="var(--text-dim)" />
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div className="tg-meta-label">Alert Time</div>
+                                <div className="tg-meta-value">
+                                  {new Date(alert.created_at).toLocaleTimeString("en-MY", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </div>
+                                <div className="tg-meta-sub">{formatTimeAgo(alert.created_at)}</div>
+                              </div>
+                            </div>
+
+                            {/* Location */}
+                            {alert.latitude !== null && alert.longitude !== null && (
+                              <div className="tg-meta-item">
+                                <div className="tg-meta-icon">
+                                  <MapPin size={14} color="var(--text-dim)" />
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div className="tg-meta-label">GPS Coordinates</div>
+                                  <div className="tg-meta-value">
+                                    {alert.latitude.toFixed(4)}°N
+                                  </div>
+                                  <div className="tg-meta-sub">
+                                    {alert.longitude.toFixed(4)}°E
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Hiker ID */}
+                            <div className="tg-meta-item">
+                              <div className="tg-meta-icon">
+                                <User size={14} color="var(--text-dim)" />
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div className="tg-meta-label">Hiker ID</div>
+                                <div className="tg-meta-value">
+                                  {alert.hiker_id ? `HKR-${String(alert.hiker_id).padStart(4, "0")}` : "Unknown"}
+                                </div>
+                                <div className="tg-meta-sub">{alert.hikers?.name ?? "No name"}</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="tg-alert-actions">
+                            {alert.latitude !== null && alert.longitude !== null && (
+                              <button
+                                className="tg-btn-navigate"
+                                onClick={() => openGoogleMaps(alert.latitude!, alert.longitude!)}
+                              >
+                                <Navigation size={13} />
+                                Navigate to Location
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ── RIGHT: Action Panel ── */}
+                      <div className="tg-action-panel">
+                        <div className="tg-action-panel-title">
+                          <Shield size={10} style={{ display: "inline", marginRight: 5 }} />
+                          Response Action
+                        </div>
+                        <div className="tg-action-panel-desc">
+                          Acknowledge to confirm receipt of this alert and stop the alarm. Hiker will be marked as responded.
+                        </div>
+
+                        <button
+                          className="tg-btn-ack"
+                          onClick={() => acknowledgeAlert(alert.id)}
+                        >
+                          <CheckCircle size={15} />
+                          Acknowledge Alert
+                        </button>
+
+                        <div className="tg-alert-id-small">
+                          Alert ID: #TG-{String(alert.id).padStart(5, "0")}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* ── FOOTER ── */}
+          <div className="tg-footer">
+            <div className="tg-footer-status">
+              <div
+                className="tg-footer-status-dot"
+                style={{
+                  background: hasAlerts ? "var(--red)" : "var(--green)",
+                  animation: hasAlerts ? "pulse-dot 1.5s ease infinite" : "none",
+                  boxShadow: hasAlerts ? "0 0 6px var(--red)" : "0 0 6px var(--green)",
+                }}
+              />
               <div>
-                <p className="text-gray-400 text-sm mb-1">Active Alerts</p>
-                <p className="text-3xl font-bold text-red-400">{alerts.length}</p>
-                <p className="text-xs text-gray-500 mt-1">{alerts.length === 0 ? 'All clear' : 'Require attention'}</p>
-              </div>
-              <div className="p-3 bg-red-500/10 rounded-xl group-hover:scale-110 transition-transform">
-                <Bell className="w-7 h-7 text-red-400" />
+                <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
+                  {hasAlerts
+                    ? `${alerts.length} active emergency${alerts.length !== 1 ? "ies" : ""} requiring attention`
+                    : "All systems operational — no active alerts"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
+                  Last updated:{" "}
+                  {now.toLocaleTimeString("en-MY", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-          
-          <div className="bg-gray-800/30 backdrop-blur-sm rounded-2xl p-5 border border-gray-700/50 hover:border-blue-500/30 transition-all group">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm mb-1">Hikers Tracked</p>
-                <p className="text-3xl font-bold text-blue-400">
-                  {new Set(alerts.map(a => a.hiker_id)).size}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Unique individuals</p>
+
+            <div className="tg-footer-right">
+              <div className="tg-footer-chip">
+                <div className="tg-live-dot" />
+                Live connection
               </div>
-              <div className="p-3 bg-blue-500/10 rounded-xl group-hover:scale-110 transition-transform">
-                <UserCheck className="w-7 h-7 text-blue-400" />
-              </div>
+              <span style={{ color: "var(--border)" }}>|</span>
+              <span>Control Center v2.0</span>
+              <span style={{ color: "var(--border)" }}>|</span>
+              <span>Gunung Ledang, Johor</span>
             </div>
           </div>
-          
-          <div className="bg-gray-800/30 backdrop-blur-sm rounded-2xl p-5 border border-gray-700/50 hover:border-orange-500/30 transition-all group">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm mb-1">Response Time</p>
-                <p className="text-3xl font-bold text-orange-400">
-                  {alerts.length > 0 ? formatTimeAgo(alerts[0].created_at).split(' ')[0] : '0'}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Latest alert</p>
-              </div>
-              <div className="p-3 bg-orange-500/10 rounded-xl group-hover:scale-110 transition-transform">
-                <Activity className="w-7 h-7 text-orange-400" />
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-gray-800/30 backdrop-blur-sm rounded-2xl p-5 border border-gray-700/50 hover:border-green-500/30 transition-all group">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm mb-1">System Status</p>
-                <p className="text-3xl font-bold text-green-400">
-                  {soundEnabled ? 'ACTIVE' : 'MUTED'}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Live monitoring</p>
-              </div>
-              <div className="p-3 bg-green-500/10 rounded-xl group-hover:scale-110 transition-transform">
-                {soundEnabled ? (
-                  <Volume2 className="w-7 h-7 text-green-400" />
-                ) : (
-                  <VolumeX className="w-7 h-7 text-gray-400" />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        </main>
       </div>
 
       <audio ref={audioRef} src="/alarm.mp3" loop />
-
-      {/* Main Content */}
-      <div className="relative z-10">
-        {/* Header Bar */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${alerts.length > 0 ? 'bg-red-500/20 animate-pulse' : 'bg-gray-800/50'}`}>
-              <AlertTriangle className={`w-5 h-5 ${alerts.length > 0 ? 'text-red-400' : 'text-gray-400'}`} />
-            </div>
-            <h2 className="text-xl font-bold">
-              Active Emergencies
-              {alerts.length > 0 && (
-                <span className="ml-2 text-sm font-normal text-gray-400">
-                  ({alerts.length} pending)
-                </span>
-              )}
-            </h2>
-          </div>
-          
-          <button
-            onClick={fetchAlerts}
-            disabled={isLoading}
-            className="text-sm text-gray-300 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                Refreshing...
-              </>
-            ) : (
-              'Refresh'
-            )}
-          </button>
-        </div>
-
-        {/* Alerts Container */}
-        <div className="space-y-4">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-16 bg-gray-800/20 rounded-2xl border border-gray-700/30">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mb-4"></div>
-              <p className="text-gray-400">Loading emergency data...</p>
-            </div>
-          ) : alerts.length === 0 ? (
-            <div className="text-center py-16 bg-gray-800/20 rounded-2xl border border-gray-700/30">
-              <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl flex items-center justify-center border border-gray-700/50">
-                <BellOff className="w-10 h-10 text-gray-500" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-300 mb-2">All Systems Clear</h3>
-              <p className="text-gray-500 max-w-md mx-auto">
-                No active emergency alerts detected. Monitoring systems are operational and ready.
-              </p>
-            </div>
-          ) : (
-            alerts.map(alert => (
-              <div
-                key={alert.id}
-                className={`group bg-gradient-to-r from-gray-800/40 via-gray-900/40 to-gray-800/40 backdrop-blur-sm rounded-2xl p-6 border shadow-xl hover:shadow-2xl transition-all duration-300 ${
-                  alerts.length > 0 ? 'animate-pulse border-red-500/30' : 'border-gray-700/50'
-                }`}
-              >
-                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-                  {/* Left Section - Alert Info */}
-                  <div className="flex-1">
-                    <div className="flex items-start gap-4">
-                      {/* Emergency Icon */}
-                      <div className={`bg-gradient-to-br ${getEmergencyColor(alert.emergency_type)} w-14 h-14 rounded-xl flex items-center justify-center text-2xl shadow-lg`}>
-                        {getEmergencyIcon(alert.emergency_type)}
-                      </div>
-                      
-                      {/* Alert Details */}
-                      <div className="flex-1">
-                        <div className="flex flex-wrap items-center gap-2 mb-3">
-                          <span className={`${getEmergencyBadgeColor(alert.emergency_type)} text-white px-3 py-1.5 rounded-full text-xs font-bold`}>
-                            {alert.emergency_type.toUpperCase()}
-                          </span>
-                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-700/50 text-gray-300">
-                            STATUS: {alert.status}
-                          </span>
-                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {alert.hikers?.name || 'Unknown Hiker'}
-                          </span>
-                        </div>
-                        
-                        {/* Time and Location */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
-                          <div className="flex items-center gap-3 p-3 bg-gray-800/30 rounded-lg">
-                            <div className="p-2 bg-gray-700/50 rounded">
-                              <Clock className="w-4 h-4 text-gray-400" />
-                            </div>
-                            <div>
-                              <p className="text-sm text-gray-400">Alert Time</p>
-                              <p className="font-medium">
-                                {new Date(alert.created_at).toLocaleTimeString('en-MY', {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                                <span className="text-gray-500 text-sm ml-2">
-                                  ({formatTimeAgo(alert.created_at)})
-                                </span>
-                              </p>
-                            </div>
-                          </div>
-                          
-                          {alert.latitude !== null && alert.longitude !== null && (
-                            <div className="flex items-center gap-3 p-3 bg-gray-800/30 rounded-lg">
-                              <div className="p-2 bg-gray-700/50 rounded">
-                                <MapPin className="w-4 h-4 text-gray-400" />
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-400">Last Known Location</p>
-                                <p className="font-medium font-mono">
-                                  {alert.latitude.toFixed(5)}, {alert.longitude.toFixed(5)}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Location Action */}
-                        {alert.latitude !== null && alert.longitude !== null && (
-                          <button
-                            onClick={() => openGoogleMaps(alert.latitude!, alert.longitude!)}
-                            className="mt-4 inline-flex items-center gap-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-5 py-2.5 rounded-lg font-semibold transition-all shadow-lg shadow-blue-500/20"
-                          >
-                            <Navigation className="w-4 h-4" />
-                            Navigate to Location
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Section - Actions */}
-                  <div className="lg:w-64 xl:w-72 flex flex-col gap-4">
-                    <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl p-4 border border-gray-700/30">
-                      <h4 className="font-semibold text-sm text-gray-300 mb-2">Emergency Response</h4>
-                      <p className="text-xs text-gray-400 mb-4">
-                        Acknowledge this alert to confirm receipt and stop the alarm system.
-                      </p>
-                      
-                      <button
-                        onClick={() => acknowledgeAlert(alert.id)}
-                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-500/20 group-hover:scale-[1.02]"
-                      >
-                        <CheckCircle className="w-5 h-5" />
-                        ACKNOWLEDGE ALERT
-                      </button>
-                      
-                      <div className="mt-3 text-center">
-                        <p className="text-[10px] text-gray-500">
-                          Alert ID: #{alert.id}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Footer Status */}
-        <div className="mt-8 pt-6 border-t border-gray-800/50">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${alerts.length > 0 ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
-              <div>
-                <p className="text-sm text-gray-300">
-                  {alerts.length > 0 
-                    ? `${alerts.length} active emergency${alerts.length !== 1 ? 's' : ''} requiring attention`
-                    : 'All systems operational'
-                  }
-                </p>
-                <p className="text-xs text-gray-500">
-                  Last updated: {new Date().toLocaleTimeString('en-MY', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit'
-                  })}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-4 text-sm text-gray-400">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span>Live connection</span>
-              </div>
-              <span className="text-gray-600">•</span>
-              <span>Control Center v2.0</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    </>
   )
 }

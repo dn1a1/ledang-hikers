@@ -25,6 +25,22 @@ type HikerProgress = {
   status: "ON_TRACK" | "DELAYED" | "NO_MOVEMENT"
 }
 
+type GpsLocation = {
+  hiker_id: number | null
+  updated_at: string | null
+}
+
+type HikerCheckpointLog = {
+  checked_at: string | null
+  checkpoints: { name: string } | { name: string }[] | null
+}
+
+type HikerWithCheckpointLogs = {
+  id: number
+  name: string
+  checkpoint_logs?: HikerCheckpointLog[] | null
+}
+
 /* =======================
    COMPONENT
 ======================= */
@@ -99,10 +115,15 @@ export default function CheckpointManagementPage() {
   ======================= */
 
   async function loadCheckpoints() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("checkpoints")
       .select("*")
       .order("order_no")
+
+    if (error) {
+      console.error(error)
+      return
+    }
 
     if (data) setCheckpoints(data)
   }
@@ -133,19 +154,31 @@ export default function CheckpointManagementPage() {
   async function deleteCheckpoint(id: number) {
     if (!confirm("Padam checkpoint ini?")) return
 
-    await supabase
+    const { error } = await supabase
       .from("checkpoints")
       .delete()
       .eq("id", id)
+
+    if (error) {
+      console.error(error)
+      alert("Gagal padam checkpoint")
+      return
+    }
 
     loadCheckpoints()
   }
 
   async function toggleActive(id: number, active: boolean) {
-    await supabase
+    const { error } = await supabase
       .from("checkpoints")
       .update({ active: !active })
       .eq("id", id)
+
+    if (error) {
+      console.error(error)
+      alert("Gagal kemaskini checkpoint")
+      return
+    }
 
     loadCheckpoints()
   }
@@ -156,21 +189,26 @@ export default function CheckpointManagementPage() {
   ======================= */
 
   async function loadHikerProgress() {
-    const { data: gpsData } = await supabase
+    const { data: gpsData, error: gpsError } = await supabase
       .from("lokasi_pendaki")
       .select("hiker_id, updated_at")
       .order("updated_at", { ascending: false })
 
+    if (gpsError) {
+      console.error(gpsError)
+      return
+    }
+
     if (!gpsData) return
 
     const latestGps = new Map<number, string>()
-    gpsData.forEach((g: any) => {
-      if (!latestGps.has(g.hiker_id)) {
+    ;(gpsData as GpsLocation[]).forEach((g) => {
+      if (g.hiker_id !== null && g.updated_at && !latestGps.has(g.hiker_id)) {
         latestGps.set(g.hiker_id, g.updated_at)
       }
     })
 
-    const { data: hikers } = await supabase
+    const { data: hikers, error: hikersError } = await supabase
       .from("hikers")
       .select(`
         id,
@@ -181,11 +219,16 @@ export default function CheckpointManagementPage() {
         )
       `)
 
+    if (hikersError) {
+      console.error(hikersError)
+      return
+    }
+
     if (!hikers) return
 
     const now = Date.now()
 
-    const progress: HikerProgress[] = hikers.map((hiker: any) => {
+    const progress: HikerProgress[] = (hikers as HikerWithCheckpointLogs[]).map((hiker) => {
       const lastGpsTime = latestGps.get(hiker.id)
       let status: HikerProgress["status"] = "NO_MOVEMENT"
 
@@ -199,12 +242,15 @@ export default function CheckpointManagementPage() {
       }
 
       const lastCheckpoint = hiker.checkpoint_logs?.[0]
+      const checkpoint = Array.isArray(lastCheckpoint?.checkpoints)
+        ? lastCheckpoint?.checkpoints[0]
+        : lastCheckpoint?.checkpoints
 
       return {
         hiker_id: hiker.id,
         hiker_name: hiker.name,
         checkpoint_name:
-          lastCheckpoint?.checkpoints?.name ?? null,
+          checkpoint?.name ?? null,
         checked_at: lastCheckpoint?.checked_at ?? null,
         status,
       }
@@ -351,6 +397,7 @@ export default function CheckpointManagementPage() {
             ))}
           </tbody>
         </table>
+        
       </div>
     </div>
   )
