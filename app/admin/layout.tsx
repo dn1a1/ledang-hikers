@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import { Toaster } from 'sonner'
 
+import SharedAdminLayout from "@/components/admin/AdminLayout";
 import { ThemeProvider } from "@/components/theme-provider";
 
 // =====================
@@ -38,7 +39,7 @@ export default function AdminLayout({
         disableTransitionOnChange
       >
         <Toaster richColors />
-        {children}
+        <SharedAdminLayout>{children}</SharedAdminLayout>
       </ThemeProvider>
     </div>
   );

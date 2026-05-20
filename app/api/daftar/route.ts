@@ -4,11 +4,13 @@ import { NextResponse } from "next/server"
 export async function POST(req: Request) {
   try {
     const body = await req.json()
+    console.log("REGISTER BODY:", body)
 
     const {
       name,
       ic,
       phone,
+      email,
       emergency_contact,
       session_id,
       age,
@@ -20,11 +22,17 @@ export async function POST(req: Request) {
       emergency_relationship,
     } = body
 
+    console.log("EMAIL RECEIVED:", email)
+
+    const normalizedEmail = String(email ?? "").trim().toLowerCase()
+    console.log("NORMALIZED EMAIL:", normalizedEmail)
+
     const missingFields: string[] = []
 
     if (!name) missingFields.push("name")
     if (!ic) missingFields.push("ic")
     if (!phone) missingFields.push("phone")
+    if (!normalizedEmail) missingFields.push("email")
     if (!session_id) missingFields.push("session_id")
     if (!age) missingFields.push("age")
     if (!address) missingFields.push("address")
@@ -40,31 +48,61 @@ export async function POST(req: Request) {
       )
     }
 
-    const { data, error } = await supabase
-      .from("hikers")
-      .insert([
-        {
-          name,
-          ic,
-          phone,
-          emergency_contact: emergency_contact ?? emergency_phone,
-          age: Number(age),
-          address,
-          medical_condition,
-          medical_condition_other:
-            medical_condition === "Lain-lain"
-              ? medical_condition_other ?? null
-              : null,
-          emergency_name,
-          emergency_phone,
-          emergency_relationship,
-        },
-      ])
-      .select()
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-    if (error || !data?.[0]) {
+    if (!emailPattern.test(normalizedEmail)) {
       return NextResponse.json(
-        { error: error?.message || "Gagal daftar hiker" },
+        { error: "Invalid email format" },
+        { status: 400 }
+      )
+    }
+
+    const { data: hiker, error: hikerError } = await supabase
+      .from("hikers")
+      .insert({
+        name,
+        ic,
+        phone,
+        email: normalizedEmail,
+        emergency_contact: emergency_contact ?? emergency_phone,
+        age: Number(age),
+        address,
+        medical_condition,
+        medical_condition_other:
+          medical_condition === "Lain-lain"
+            ? medical_condition_other ?? null
+            : null,
+        emergency_name,
+        emergency_phone,
+        emergency_relationship,
+      })
+      .select("id, name, email")
+      .single()
+
+    if (hikerError || !hiker) {
+      console.error("HIKER INSERT ERROR:", hikerError)
+      return NextResponse.json(
+        { error: hikerError?.message || "Gagal daftar hiker" },
+        { status: 400 }
+      )
+    }
+
+    console.log("INSERTED HIKER:", hiker)
+
+    const { error: declarationError } = await supabase
+      .from("declarations")
+      .insert({
+        hiker_id: hiker.id,
+        session_id,
+      })
+
+    if (declarationError) {
+      console.error("DECLARATION INSERT ERROR:", declarationError)
+
+      await supabase.from("hikers").delete().eq("id", hiker.id)
+
+      return NextResponse.json(
+        { error: declarationError.message },
         { status: 400 }
       )
     }
@@ -73,12 +111,12 @@ export async function POST(req: Request) {
       {
         success: true,
         message: "Registration successful",
-        data,
+        data: [hiker],
       },
       { status: 200 }
     )
   } catch (err) {
-    console.error(err)
+    console.error("API DAFTAR ERROR:", err)
 
     return NextResponse.json({ error: "Server error" }, { status: 500 })
   }

@@ -34,6 +34,23 @@ import {
   MapPin,
   Clock,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type DateRange = "today" | "week" | "month" | "all";
 type IconComponent = ComponentType<{ size?: number; className?: string; style?: CSSProperties }>;
@@ -99,8 +116,6 @@ interface GuiderOptionRow {
 
 interface DeclarationStatusRow {
   status: string | null;
-  checkout_at?: string | null;
-  checked_out?: boolean | null;
 }
 
 interface EmergencyStatusRow {
@@ -124,7 +139,7 @@ interface HikerNameRow {
 interface CheckpointLogRow {
   checkpoint_id: string | null;
   hiker_id: string | null;
-  created_at: string | null;
+  checked_at: string | null;
 }
 
 interface CheckpointRow {
@@ -217,6 +232,27 @@ function safeCount(value: number | null): number {
   return Number.isFinite(value) ? value ?? 0 : 0;
 }
 
+function hasSupabaseErrorDetails(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const candidate = error as {
+    message?: unknown;
+    code?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+
+  return [candidate.message, candidate.code, candidate.details, candidate.hint].some(
+    (value) => typeof value === "string" && value.trim().length > 0
+  );
+}
+
+function logQueryWarning(label: string, error: unknown) {
+  if (hasSupabaseErrorDetails(error)) {
+    console.warn(`${label}:`, error);
+  }
+}
+
 const COLORS = ["#22c55e", "#f97316", "#ef4444", "#3b82f6", "#a855f7", "#eab308"];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -245,30 +281,30 @@ function KPICard({
 }) {
   return (
     <div
-      className="relative overflow-hidden rounded-2xl bg-white border border-slate-100 shadow-sm p-5 flex flex-col gap-3"
+      className="metric-card relative flex flex-col gap-3 overflow-hidden"
       style={{ borderLeft: `4px solid ${color}` }}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">{label}</span>
+        <span className="text-xs font-semibold uppercase text-muted-foreground">{label}</span>
         <span className="p-2 rounded-xl" style={{ background: `${color}18` }}>
           <Icon size={16} style={{ color }} />
         </span>
       </div>
       {loading ? (
-        <div className="h-8 w-20 rounded-lg bg-slate-100 animate-pulse" />
+        <div className="h-8 w-20 animate-pulse rounded-lg bg-muted" />
       ) : (
-        <span className="text-3xl font-black tracking-tight text-slate-800">{value}</span>
+        <span className="text-3xl font-black tracking-tight text-foreground">{value}</span>
       )}
-      {sub && <span className="text-xs text-slate-400">{sub}</span>}
+      {sub && <span className="text-xs text-muted-foreground">{sub}</span>}
     </div>
   );
 }
 
 function SectionCard({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="rounded-2xl bg-white border border-slate-100 shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-50">
-        <h3 className="text-sm font-bold text-slate-700 tracking-wide uppercase">{title}</h3>
+    <div className="panel-surface">
+      <div className="panel-header px-6">
+        <h3 className="text-sm font-bold uppercase text-foreground">{title}</h3>
         {action}
       </div>
       <div className="p-6">{children}</div>
@@ -280,15 +316,15 @@ function StatusBadge({ status }: { status: string | null }) {
   const s = (status ?? "unknown").toLowerCase();
   const color = STATUS_COLOR[s] ?? "#94a3b8";
   return (
-    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: `${color}18`, color }}>
+    <Badge variant="outline" className="text-xs font-semibold" style={{ background: `${color}18`, color, borderColor: `${color}40` }}>
       {status ?? "Unknown"}
-    </span>
+    </Badge>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-slate-300 gap-2">
+    <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
       <Activity size={32} />
       <p className="text-sm">{message}</p>
     </div>
@@ -379,16 +415,16 @@ export default function ReportsPage() {
           ? supabase.from("emergency_alerts").select("status, created_at").gte("created_at", since)
           : supabase.from("emergency_alerts").select("status, created_at"),
         since
-          ? supabase.from("declarations").select("status, checkout_at, checked_out").gte("created_at", since)
-          : supabase.from("declarations").select("status, checkout_at, checked_out"),
+          ? supabase.from("declarations").select("status").gte("created_at", since)
+          : supabase.from("declarations").select("status"),
       ]);
 
-      if (hikersCountResponse.error) console.error("hikers count error:", hikersCountResponse.error);
-      if (checkinsCountResponse.error) console.error("declarations count error:", checkinsCountResponse.error);
-      if (emergenciesCountResponse.error) console.error("emergency_alerts count error:", emergenciesCountResponse.error);
-      if (guidersCountResponse.error) console.error("guiders count error:", guidersCountResponse.error);
-      if (emergencyAllResponse.error) console.error("emergency_alerts stats error:", emergencyAllResponse.error);
-      if (declarationsResponse.error) console.error("declarations stats error:", declarationsResponse.error);
+      logQueryWarning("hikers count error", hikersCountResponse.error);
+      logQueryWarning("declarations count error", checkinsCountResponse.error);
+      logQueryWarning("emergency_alerts count error", emergenciesCountResponse.error);
+      logQueryWarning("guiders count error", guidersCountResponse.error);
+      logQueryWarning("emergency_alerts stats error", emergencyAllResponse.error);
+      logQueryWarning("declarations stats error", declarationsResponse.error);
 
       const emergencyAll = (emergencyAllResponse.data ?? []) as EmergencyStatusRow[];
       const declarations = (declarationsResponse.data ?? []) as DeclarationStatusRow[];
@@ -396,9 +432,7 @@ export default function ReportsPage() {
       let totalCheckouts = 0;
       for (const d of declarations) {
         const hasCheckout =
-          d?.checkout_at != null ||
-          d?.checked_out === true ||
-          (typeof d?.status === "string" && ["checked_out", "completed", "done"].includes(d.status.toLowerCase()));
+          typeof d?.status === "string" && ["checked_out", "completed", "done"].includes(d.status.toLowerCase());
         if (hasCheckout) totalCheckouts++;
       }
 
@@ -437,16 +471,16 @@ export default function ReportsPage() {
       const { data: emergencyData, error: eErr } = await (since ? emergencyQuery.gte("created_at", since) : emergencyQuery)
         .order("created_at", { ascending: false })
         .limit(50);
-      if (eErr) console.error("emergency_alerts error:", eErr);
+      logQueryWarning("emergency_alerts error", eErr);
 
       const emergencyRaw = (emergencyData ?? []) as EmergencyRawRow[];
       if (emergencyRaw.length > 0) {
         const hikerIds = [...new Set(emergencyRaw.map((e) => e?.hiker_id).filter((id): id is string => Boolean(id)))];
-        const { data: hikerNameData, error: hikerNameError } =
+      const { data: hikerNameData, error: hikerNameError } =
           hikerIds.length > 0
             ? await supabase.from("hikers").select("id, name").in("id", hikerIds)
             : { data: [] as HikerNameRow[], error: null };
-        if (hikerNameError) console.error("hikers lookup error:", hikerNameError);
+        logQueryWarning("hikers lookup error", hikerNameError);
 
         const hikerNames = (hikerNameData ?? []) as HikerNameRow[];
         const nameMap: Record<string, string> = {};
@@ -474,16 +508,16 @@ export default function ReportsPage() {
         "created_at",
         { ascending: true }
       );
-      if (dErr) console.error("declarations error:", dErr);
+      logQueryWarning("declarations error", dErr);
       setHikingTrend(groupByDate((declData ?? []) as Array<{ created_at: string | null }>));
 
       const { data: checkpointLogs, error: clErr } = await supabase
         .from("checkpoint_logs")
-        .select("checkpoint_id, hiker_id, created_at");
-      if (clErr) console.error("checkpoint_logs error:", clErr);
+        .select("checkpoint_id, hiker_id, checked_at");
+      logQueryWarning("checkpoint_logs error", clErr);
 
       const { data: checkpoints, error: cpErr } = await supabase.from("checkpoints").select("id, name");
-      if (cpErr) console.error("checkpoints error:", cpErr);
+      logQueryWarning("checkpoints error", cpErr);
 
       const cpMap: Record<string, string> = {};
       for (const cp of (checkpoints ?? []) as CheckpointRow[]) {
@@ -496,9 +530,9 @@ export default function ReportsPage() {
         if (!checkpointId) continue;
         if (!cpStats[checkpointId]) cpStats[checkpointId] = { hikers: new Set(), latest: null };
         if (log?.hiker_id) cpStats[checkpointId].hikers.add(log.hiker_id);
-        if (log?.created_at) {
+        if (log?.checked_at) {
           const curr = cpStats[checkpointId].latest;
-          if (!curr || log.created_at > curr) cpStats[checkpointId].latest = log.created_at;
+          if (!curr || log.checked_at > curr) cpStats[checkpointId].latest = log.checked_at;
         }
       }
       setCheckpointStats(
@@ -512,13 +546,13 @@ export default function ReportsPage() {
       );
 
       const { data: guidersData, error: gErr } = await supabase.from("guiders").select("id, name, user_id");
-      if (gErr) console.error("guiders error:", gErr);
+      logQueryWarning("guiders error", gErr);
 
       const { data: qrSessions, error: qErr } = await supabase.from("qr_sessions").select("id, guider_id, created_at, status");
-      if (qErr) console.error("qr_sessions error:", qErr);
+      logQueryWarning("qr_sessions error", qErr);
 
       const { data: lokasiData, error: lErr } = await supabase.from("lokasi_pendaki").select("hiker_id, guider_id, session_id");
-      if (lErr) console.error("lokasi_pendaki error:", lErr);
+      logQueryWarning("lokasi_pendaki error", lErr);
 
       const guiders = (guidersData ?? []) as GuiderRow[];
       const allQrSessions = (qrSessions ?? []) as QrSessionRow[];
@@ -570,7 +604,7 @@ export default function ReportsPage() {
       if (sessionFilter !== "all") sessionsQuery = sessionsQuery.eq("id", sessionFilter);
 
       const { data: sessionsRawData, error: sErr } = await sessionsQuery.order("created_at", { ascending: false }).limit(50);
-      if (sErr) console.error("qr_sessions error:", sErr);
+      logQueryWarning("qr_sessions error", sErr);
 
       const sessionsRaw = (sessionsRawData ?? []) as QrSessionRow[];
       setSessionRows(
@@ -603,100 +637,99 @@ export default function ReportsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
-      <div className="bg-white border-b border-slate-100 px-6 py-6">
-        <div className="max-w-screen-xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="app-shell min-h-screen font-sans">
+      <div className="border-b border-border/70 bg-background/70 px-4 py-6 backdrop-blur sm:px-6">
+        <div className="mx-auto max-w-screen-xl">
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
             <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <TrendingUp className="text-emerald-500" size={24} />
+              <h1 className="flex items-center gap-2 text-2xl font-black tracking-tight text-foreground">
+                <TrendingUp className="text-primary" size={24} />
                 Reports &amp; Analytics
               </h1>
-              <p className="text-sm text-slate-400 mt-1">
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
                 Review hiking activities, emergency statistics, checkpoint progress, and safety performance.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={fetchAll}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
-              >
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={fetchAll} variant="outline" size="sm">
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                 Refresh
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => {
                   console.log("Export Report clicked - placeholder");
                   alert("Export Report feature coming soon.");
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
+                size="sm"
               >
                 <Download size={14} />
                 Export Report
-              </button>
+              </Button>
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+          <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+            <div className="flex w-full items-center gap-1 rounded-xl border border-border bg-muted/60 p-1 sm:w-auto">
               {dateOptions.map((opt) => (
-                <button
+                <Button
                   key={opt.value}
                   onClick={() => setDateRange(opt.value)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    dateRange === opt.value ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`}
+                  variant={dateRange === opt.value ? "secondary" : "ghost"}
+                  size="sm"
+                  className="flex-1 sm:flex-none"
                 >
                   {opt.label}
-                </button>
+                </Button>
               ))}
             </div>
 
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5">
-              <Filter size={12} className="text-slate-400" />
-              <select
-                value={sessionFilter}
-                onChange={(e) => setSessionFilter(e.target.value)}
-                className="text-xs text-slate-600 bg-transparent outline-none cursor-pointer max-w-[160px]"
-              >
-                <option value="all">All Sessions</option>
-                {sessionOptions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+            <div className="flex w-full items-center gap-1.5 sm:w-auto">
+              <Filter size={12} className="text-muted-foreground" />
+              <Select value={sessionFilter} onValueChange={setSessionFilter}>
+                <SelectTrigger className="w-full sm:w-[240px]">
+                  <SelectValue placeholder="All Sessions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sessions</SelectItem>
+                  {sessionOptions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5">
-              <Users size={12} className="text-slate-400" />
-              <select
-                value={guiderFilter}
-                onChange={(e) => setGuiderFilter(e.target.value)}
-                className="text-xs text-slate-600 bg-transparent outline-none cursor-pointer max-w-[160px]"
-              >
-                <option value="all">All Guiders</option>
-                {guiderOptions.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex w-full items-center gap-1.5 sm:w-auto">
+              <Users size={12} className="text-muted-foreground" />
+              <Select value={guiderFilter} onValueChange={setGuiderFilter}>
+                <SelectTrigger className="w-full sm:w-[220px]">
+                  <SelectValue placeholder="All Guiders" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Guiders</SelectItem>
+                  {guiderOptions.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-screen-xl mx-auto px-6 py-8 space-y-8">
+      <div className="mx-auto max-w-screen-xl space-y-8 px-4 py-8 sm:px-6">
         {error && (
-          <div className="rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <AlertTriangle size={16} />
             {error}
           </div>
         )}
 
         <section>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Overview</h2>
+          <h2 className="mb-4 text-xs font-bold uppercase text-muted-foreground">Overview</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <KPICard icon={Users} label="Total Hikers" value={kpi?.totalHikers ?? "-"} color="#22c55e" loading={loading} />
             <KPICard icon={UserCheck} label="Total Check-ins" value={kpi?.totalCheckins ?? "-"} color="#3b82f6" loading={loading} />
@@ -718,7 +751,7 @@ export default function ReportsPage() {
         </section>
 
         <section>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Emergency Analysis</h2>
+          <h2 className="mb-4 text-xs font-bold uppercase text-muted-foreground">Emergency Analysis</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <SectionCard title="Emergency by Status">
               {emergencyByStatus.length === 0 ? (
@@ -770,32 +803,32 @@ export default function ReportsPage() {
               {emergencyRows.length === 0 ? (
                 <EmptyState message="No emergency cases" />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left border-b border-slate-100">
+                <div className="table-shell">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-border/60">
                         {["Hiker", "Type", "Status", "Date / Time", "Lat", "Long"].map((h) => (
-                          <th key={h} className="pb-3 pr-4 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                          <TableHead key={h} className="px-4 text-xs font-semibold uppercase text-muted-foreground">
                             {h}
-                          </th>
+                          </TableHead>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {emergencyRows.map((row) => (
-                        <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                          <td className="py-3 pr-4 font-medium text-slate-700 whitespace-nowrap">{row.hiker_name}</td>
-                          <td className="py-3 pr-4 text-slate-500 whitespace-nowrap">{row.emergency_type ?? "-"}</td>
-                          <td className="py-3 pr-4">
+                        <TableRow key={row.id} className="border-border/40 hover:bg-accent/40">
+                          <TableCell className="px-4 py-3 font-medium text-foreground">{row.hiker_name}</TableCell>
+                          <TableCell className="px-4 py-3 text-muted-foreground">{row.emergency_type ?? "-"}</TableCell>
+                          <TableCell className="px-4 py-3">
                             <StatusBadge status={row.status} />
-                          </td>
-                          <td className="py-3 pr-4 text-slate-500 whitespace-nowrap text-xs">{fmt(row.created_at)}</td>
-                          <td className="py-3 pr-4 text-slate-400 text-xs font-mono">{formatCoord(row.latitude)}</td>
-                          <td className="py-3 text-slate-400 text-xs font-mono">{formatCoord(row.longitude)}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-xs text-muted-foreground">{fmt(row.created_at)}</TableCell>
+                          <TableCell className="px-4 py-3 font-mono text-xs text-muted-foreground">{formatCoord(row.latitude)}</TableCell>
+                          <TableCell className="px-4 py-3 font-mono text-xs text-muted-foreground">{formatCoord(row.longitude)}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </SectionCard>
@@ -803,7 +836,7 @@ export default function ReportsPage() {
         </section>
 
         <section>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Hiking Activity</h2>
+          <h2 className="mb-4 text-xs font-bold uppercase text-muted-foreground">Hiking Activity</h2>
           <SectionCard title="Check-in Trend">
             {hikingTrend.length === 0 ? (
               <EmptyState message="No activity data" />
@@ -822,7 +855,7 @@ export default function ReportsPage() {
         </section>
 
         <section>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Checkpoint Analytics</h2>
+          <h2 className="mb-4 text-xs font-bold uppercase text-muted-foreground">Checkpoint Analytics</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <SectionCard title="Hikers Reached Per Checkpoint">
               {checkpointStats.length === 0 ? (
@@ -844,39 +877,41 @@ export default function ReportsPage() {
               {checkpointStats.length === 0 ? (
                 <EmptyState message="No checkpoint data" />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left border-b border-slate-100">
+                <div className="table-shell">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-border/60">
                         {["Checkpoint", "Hikers Reached", "Latest Check-in"].map((h) => (
-                          <th key={h} className="pb-3 pr-4 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                          <TableHead key={h} className="px-4 text-xs font-semibold uppercase text-muted-foreground">
                             {h}
-                          </th>
+                          </TableHead>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {checkpointStats.map((cp) => (
-                        <tr key={cp.name} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                          <td className="py-3 pr-4 font-medium text-slate-700">
+                        <TableRow key={cp.name} className="border-border/40 hover:bg-accent/40">
+                          <TableCell className="px-4 py-3 font-medium text-foreground">
                             <span className="flex items-center gap-1.5">
                               <MapPin size={12} className="text-blue-400" />
                               {cp.name}
                             </span>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs font-bold">{cp.hikers}</span>
-                          </td>
-                          <td className="py-3 text-slate-400 text-xs">
+                          </TableCell>
+                          <TableCell className="px-4 py-3">
+                            <Badge variant="outline" className="theme-chip-info">
+                              {cp.hikers}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Clock size={10} />
                               {fmt(cp.latest)}
                             </span>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </SectionCard>
@@ -884,81 +919,87 @@ export default function ReportsPage() {
         </section>
 
         <section>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Guider Performance</h2>
+          <h2 className="mb-4 text-xs font-bold uppercase text-muted-foreground">Guider Performance</h2>
           <SectionCard title="Guider Performance Report">
             {guiderStats.length === 0 ? (
               <EmptyState message="No guider data" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left border-b border-slate-100">
+              <div className="table-shell">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border/60">
                       {["Guider", "Total Sessions", "Total Hikers", "Last Active"].map((h) => (
-                        <th key={h} className="pb-3 pr-4 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                        <TableHead key={h} className="px-4 text-xs font-semibold uppercase text-muted-foreground">
                           {h}
-                        </th>
+                        </TableHead>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {guiderStats.map((g) => (
-                      <tr key={g.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                        <td className="py-3 pr-4 font-semibold text-slate-700">{g.name}</td>
-                        <td className="py-3 pr-4">
-                          <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">{g.total_sessions}</span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-xs font-bold">{g.total_hikers}</span>
-                        </td>
-                        <td className="py-3 text-slate-400 text-xs">
+                      <TableRow key={g.id} className="border-border/40 hover:bg-accent/40">
+                        <TableCell className="px-4 py-3 font-semibold text-foreground">{g.name}</TableCell>
+                        <TableCell className="px-4 py-3">
+                          <Badge variant="outline" className="theme-chip-neutral">
+                            {g.total_sessions}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-4 py-3">
+                          <Badge variant="outline" className="theme-chip-success">
+                            {g.total_hikers}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Calendar size={10} />
                             {fmt(g.last_active)}
                           </span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </SectionCard>
         </section>
 
         <section>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Session Reports</h2>
+          <h2 className="mb-4 text-xs font-bold uppercase text-muted-foreground">Session Reports</h2>
           <SectionCard title="QR Sessions">
             {sessionRows.length === 0 ? (
               <EmptyState message="No session data" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left border-b border-slate-100">
+              <div className="table-shell">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border/60">
                       {["Session ID", "QR Type", "Guider", "Created", "Status", "Hikers"].map((h) => (
-                        <th key={h} className="pb-3 pr-4 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                        <TableHead key={h} className="px-4 text-xs font-semibold uppercase text-muted-foreground">
                           {h}
-                        </th>
+                        </TableHead>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {sessionRows.map((s) => (
-                      <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                        <td className="py-3 pr-4 font-mono text-xs text-slate-500">{String(s.id).slice(0, 12)}...</td>
-                        <td className="py-3 pr-4 text-slate-600">{s.qr_type ?? "-"}</td>
-                        <td className="py-3 pr-4 text-slate-700 font-medium">{s.guider_name}</td>
-                        <td className="py-3 pr-4 text-slate-400 text-xs whitespace-nowrap">{fmtDate(s.created_at)}</td>
-                        <td className="py-3 pr-4">
+                      <TableRow key={s.id} className="border-border/40 hover:bg-accent/40">
+                        <TableCell className="px-4 py-3 font-mono text-xs text-muted-foreground">{String(s.id).slice(0, 12)}...</TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">{s.qr_type ?? "-"}</TableCell>
+                        <TableCell className="px-4 py-3 font-medium text-foreground">{s.guider_name}</TableCell>
+                        <TableCell className="px-4 py-3 text-xs text-muted-foreground">{fmtDate(s.created_at)}</TableCell>
+                        <TableCell className="px-4 py-3">
                           <StatusBadge status={s.status} />
-                        </td>
-                        <td className="py-3">
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">{s.total_hikers}</span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="px-4 py-3">
+                          <Badge variant="outline" className="theme-chip-neutral">
+                            {s.total_hikers}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </SectionCard>

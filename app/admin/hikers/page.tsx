@@ -3,32 +3,43 @@
 import { useEffect, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import {
-  User,
-  UserPlus,
-  Shield,
-  Camera,
-  Search,
-  Filter,
-  Users,
-  Edit,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  Phone,
-  FileText,
   AlertCircle,
   BadgeCheck,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Edit,
+  FileText,
+  Mail,
+  Phone,
+  Search,
+  Shield,
+  Trash2,
+  User,
+  UserPlus,
+  Users,
 } from "lucide-react"
-import Image from "next/image"
 
-/* =======================
-   TYPES
-======================= */
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+
 type Hiker = {
   id: number
   name: string
   ic: string
   phone: string
+  email: string
   emergency_contact: string
 }
 
@@ -40,262 +51,419 @@ type Guider = {
   age: number
   experience: string
   photo_url: string | null
-  mgp_number: string | null // 👈 tambah
+  mgp_number: string | null
 }
 
-/* =======================
-   MAIN PAGE
-======================= */
+const ITEMS_PER_PAGE = 8
+
 export default function ParticipantManagementPage() {
   const [activeRole, setActiveRole] = useState<"hiker" | "guider">("hiker")
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-              Participant Management
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Gunung Ledang National Park • Manage Hikers & Guiders
-            </p>
-          </div>
+    <div className="app-shell min-h-screen p-4 md:p-6">
+      <div className="mx-auto max-w-screen-xl space-y-6">
+        <section className="panel-surface">
+          <div className="panel-header">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+                {activeRole === "hiker" ? <Users className="h-6 w-6" /> : <Shield className="h-6 w-6" />}
+              </div>
+              <div>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">Gunung Ledang</Badge>
+                  <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Admin Directory</Badge>
+                </div>
+                <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Participant Management</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Manage hikers and guiders using the shared admin theme and responsive data tools.
+                </p>
+              </div>
+            </div>
 
-          <div className="flex items-center gap-4">
-            <div className="px-4 py-2 bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-200 rounded-lg">
-              <span className="text-sm font-medium text-emerald-800">
-                Switch Role View
-              </span>
+            <div className="flex w-full max-w-sm gap-2 rounded-2xl border border-border bg-muted/50 p-1">
+              <RoleSwitchButton
+                active={activeRole === "hiker"}
+                icon={<Users className="h-4 w-4" />}
+                label="Hikers"
+                onClick={() => setActiveRole("hiker")}
+              />
+              <RoleSwitchButton
+                active={activeRole === "guider"}
+                icon={<Shield className="h-4 w-4" />}
+                label="Guiders"
+                onClick={() => setActiveRole("guider")}
+              />
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* ROLE SWITCHER */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => setActiveRole("hiker")}
-            className={`px-6 py-3 rounded-xl font-medium transition-all ${
-              activeRole === "hiker"
-                ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-lg shadow-emerald-100"
-                : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Hikers
-            </div>
-          </button>
-
-          <button
-            onClick={() => setActiveRole("guider")}
-            className={`px-6 py-3 rounded-xl font-medium transition-all ${
-              activeRole === "guider"
-                ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg shadow-blue-100"
-                : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5" />
-              Guiders
-            </div>
-          </button>
-        </div>
-
-        {/* DYNAMIC CONTENT */}
         {activeRole === "hiker" ? <HikerSection /> : <GuiderSection />}
       </div>
     </div>
   )
 }
 
-/* =========================================================
-   HIKER SECTION
-========================================================= */
+function SectionMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string | number
+  tone: string
+}) {
+  return (
+    <div className="metric-card">
+      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+      <p className={`mt-2 text-2xl font-semibold ${tone}`}>{value}</p>
+    </div>
+  )
+}
+
+function RoleSwitchButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <Button
+      onClick={onClick}
+      variant={active ? "secondary" : "ghost"}
+      className={`flex-1 ${active ? "text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+    >
+      <span className="flex items-center justify-center gap-2">
+        {icon}
+        {label}
+      </span>
+    </Button>
+  )
+}
+
+function SectionPager({
+  currentPage,
+  totalPages,
+  onPrev,
+  onNext,
+}: {
+  currentPage: number
+  totalPages: number
+  onPrev: () => void
+  onNext: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" onClick={onPrev} disabled={currentPage === 1}>
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <span className="min-w-28 text-center text-sm text-muted-foreground">
+        Page {totalPages === 0 ? 0 : currentPage} of {totalPages || 0}
+      </span>
+      <Button variant="outline" size="sm" onClick={onNext} disabled={currentPage >= totalPages}>
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+}
+
 function HikerSection() {
   const [hikers, setHikers] = useState<Hiker[]>([])
   const [filteredHikers, setFilteredHikers] = useState<Hiker[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage] = useState(8)
 
   const [name, setName] = useState("")
   const [ic, setIc] = useState("")
   const [phone, setPhone] = useState("")
+  const [email, setEmail] = useState("")
   const [emergency, setEmergency] = useState("")
   const [editingId, setEditingId] = useState<number | null>(null)
 
   const fetchHikers = async () => {
-    const { data } = await supabase.from("hikers").select("*")
+    const { data, error } = await supabase.from("hikers").select("*").order("name")
+    if (error) {
+      console.error("FETCH HIKERS ERROR:", error)
+      return
+    }
+
     setHikers(data || [])
     setFilteredHikers(data || [])
   }
 
-  useEffect(() => { fetchHikers() }, [])
+  useEffect(() => {
+    fetchHikers()
+  }, [])
 
   useEffect(() => {
     if (!searchTerm) {
       setFilteredHikers(hikers)
     } else {
       const term = searchTerm.toLowerCase()
-      setFilteredHikers(hikers.filter(h =>
-        h.name.toLowerCase().includes(term) ||
-        h.ic.includes(term) ||
-        h.phone.includes(term)
-      ))
+      setFilteredHikers(
+        hikers.filter((hiker) =>
+          hiker.name.toLowerCase().includes(term) ||
+          hiker.ic.includes(term) ||
+          hiker.phone.includes(term) ||
+          (hiker.email || "").toLowerCase().includes(term)
+        )
+      )
     }
     setCurrentPage(1)
   }, [searchTerm, hikers])
 
-  const totalPages = Math.ceil(filteredHikers.length / itemsPerPage)
-  const currentHikers = filteredHikers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+  const totalPages = Math.ceil(filteredHikers.length / ITEMS_PER_PAGE)
+  const currentHikers = filteredHikers.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
-  const submitHiker = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (editingId) {
-      await supabase.from("hikers").update({ name, ic, phone, emergency_contact: emergency }).eq("id", editingId)
-    } else {
-      await supabase.from("hikers").insert({ name, ic, phone, emergency_contact: emergency })
-    }
+  const resetForm = () => {
     setEditingId(null)
-    setName(""); setIc(""); setPhone(""); setEmergency("")
+    setName("")
+    setIc("")
+    setPhone("")
+    setEmail("")
+    setEmergency("")
+  }
+
+  const deleteHiker = async (id: number) => {
+    const confirmDelete = confirm("Are you sure you want to delete this hiker?")
+    if (!confirmDelete) return
+
+    const { error } = await supabase.from("hikers").delete().eq("id", id)
+    if (error) {
+      console.error("DELETE HIKER ERROR:", error)
+      alert("Delete hiker failed")
+      return
+    }
+
+    fetchHikers()
+  }
+
+  const submitHiker = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const normalizedEmail = email.trim().toLowerCase()
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+    if (!emailPattern.test(normalizedEmail)) {
+      alert("Please enter a valid email address")
+      return
+    }
+
+    if (editingId) {
+      await supabase
+        .from("hikers")
+        .update({ name, ic, phone, email: normalizedEmail, emergency_contact: emergency })
+        .eq("id", editingId)
+    } else {
+      await supabase
+        .from("hikers")
+        .insert({ name, ic, phone, email: normalizedEmail, emergency_contact: emergency })
+    }
+
+    resetForm()
     fetchHikers()
   }
 
   return (
-    <div className="grid lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-1">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              {editingId ? <><Edit className="w-5 h-5 text-amber-600" />Edit Hiker</> : <><UserPlus className="w-5 h-5 text-emerald-600" />Add New Hiker</>}
-            </h2>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+      <section className="space-y-6">
+        <div className="panel-surface">
+          <div className="panel-header">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                {editingId ? "Edit Hiker" : "Add New Hiker"}
+              </h2>
+              <p className="text-xs text-muted-foreground">Maintain hiker identity, contact, and emergency information.</p>
+            </div>
             {editingId && (
-              <button onClick={() => { setEditingId(null); setName(""); setIc(""); setPhone(""); setEmergency("") }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
+                Cancel
+              </Button>
             )}
           </div>
 
-          <form onSubmit={submitHiker} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-              <input type="text" placeholder="Enter hiker's full name" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-black" required />
+          <form onSubmit={submitHiker} className="space-y-4 p-5">
+            <div className="space-y-2">
+              <Label htmlFor="hiker-name">Full Name</Label>
+              <Input id="hiker-name" value={name} onChange={(event) => setName(event.target.value)} required />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">IC Number</label>
-              <input type="text" placeholder="e.g., 900101-01-1234" value={ic} onChange={(e) => setIc(e.target.value)} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-black" required />
+
+            <div className="space-y-2">
+              <Label htmlFor="hiker-ic">IC Number</Label>
+              <Input id="hiker-ic" value={ic} onChange={(event) => setIc(event.target.value)} required />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-              <input type="tel" placeholder="e.g., 012-3456789" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-black" required />
+
+            <div className="space-y-2">
+              <Label htmlFor="hiker-phone">Phone Number</Label>
+              <Input id="hiker-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">Emergency Contact <AlertCircle className="w-4 h-4 text-amber-600" /></label>
-              <input type="text" placeholder="Name & contact number" value={emergency} onChange={(e) => setEmergency(e.target.value)} className="w-full px-4 py-2.5 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent transition text-black" required />
+
+            <div className="space-y-2">
+              <Label htmlFor="hiker-email">Email Address</Label>
+              <Input id="hiker-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </div>
-            <button type="submit" className={`w-full py-3 rounded-lg font-medium text-white transition ${editingId ? "bg-amber-600 hover:bg-amber-700" : "bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700"}`}>
+
+            <div className="space-y-2">
+              <Label htmlFor="hiker-emergency" className="flex items-center gap-2">
+                Emergency Contact
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+              </Label>
+              <Input
+                id="hiker-emergency"
+                value={emergency}
+                onChange={(event) => setEmergency(event.target.value)}
+                required
+              />
+            </div>
+
+            <Button type="submit" className="w-full">
+              {editingId ? <Edit className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
               {editingId ? "Update Hiker" : "Add Hiker"}
-            </button>
+            </Button>
           </form>
         </div>
 
-        <div className="mt-6 bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 rounded-xl p-6">
-          <h3 className="font-medium text-emerald-800 mb-4 flex items-center gap-2"><Users className="w-5 h-5" />Hiker Statistics</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-              <div className="text-2xl font-bold text-emerald-700">{hikers.length}</div>
-              <div className="text-xs text-gray-600 mt-1">Total Hikers</div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SectionMetric label="Total Hikers" value={hikers.length} tone="text-primary" />
+          <SectionMetric label="Filtered Results" value={filteredHikers.length} tone="theme-text-info" />
+        </div>
+      </section>
+
+      <section className="space-y-6">
+        <div className="panel-surface">
+          <div className="panel-header">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Filter Hikers</h3>
+              <p className="text-xs text-muted-foreground">Search by name, IC, phone, or email.</p>
             </div>
-            <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-              <div className="text-2xl font-bold text-blue-600">{filteredHikers.length}</div>
-              <div className="text-xs text-gray-600 mt-1">Filtered</div>
+            <div className="text-sm text-muted-foreground">
+              Showing {currentHikers.length} of {filteredHikers.length}
+            </div>
+          </div>
+          <div className="p-5">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search hikers..."
+                className="pl-10"
+              />
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="lg:col-span-2 space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-            <h3 className="font-medium text-gray-900 flex items-center gap-2"><Filter className="w-5 h-5" />Filter Hikers</h3>
-            <div className="text-sm text-gray-600">Showing {currentHikers.length} of {filteredHikers.length} hikers</div>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input type="text" placeholder="Search by name, IC, or phone..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="font-medium text-gray-900">Hiker Records</h3>
-                <p className="text-sm text-gray-600 mt-1">Manage hiker information and emergency contacts</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"><ChevronLeft className="w-4 h-4" /></button>
-                <span className="px-3 py-1.5 text-sm text-gray-700">Page {currentPage} of {totalPages}</span>
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"><ChevronRight className="w-4 h-4" /></button>
-              </div>
+        <div className="panel-surface overflow-hidden">
+          <div className="panel-header">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Hiker Records</h3>
+              <p className="text-xs text-muted-foreground">Manage identity, contact details, and emergency contacts.</p>
             </div>
+            <SectionPager
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPrev={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              onNext={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hiker Details</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact Information</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {currentHikers.map((hiker) => (
-                  <tr key={hiker.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">{hiker.name}</div>
-                      <div className="text-sm text-gray-500 mt-1 flex items-center gap-2"><FileText className="w-4 h-4" />{hiker.ic}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-gray-900"><Phone className="w-4 h-4" />{hiker.phone}</div>
-                        <div className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded"><AlertCircle className="w-3 h-3 inline mr-1" />{hiker.emergency_contact}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { setEditingId(hiker.id); setName(hiker.name); setIc(hiker.ic); setPhone(hiker.phone); setEmergency(hiker.emergency_contact) }} className="px-3 py-1.5 text-sm bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition flex items-center gap-1"><Edit className="w-4 h-4" />Edit</button>
-                        <button onClick={() => supabase.from("hikers").delete().eq("id", hiker.id).then(fetchHikers)} className="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition flex items-center gap-1"><Trash2 className="w-4 h-4" />Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {currentHikers.length === 0 && (
-              <div className="p-12 text-center">
-                <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mb-4"><Users className="w-6 h-6 text-gray-400" /></div>
-                <h3 className="font-medium text-gray-900 mb-2">No hikers found</h3>
-                <p className="text-gray-600 max-w-sm mx-auto">{searchTerm ? "Try adjusting your search term" : "Add your first hiker using the form"}</p>
-              </div>
-            )}
-          </div>
+          {currentHikers.length === 0 ? (
+            <EmptyState
+              icon={<Users className="h-6 w-6 text-muted-foreground" />}
+              title="No hikers found"
+              description={searchTerm ? "Try adjusting your search term." : "Add your first hiker using the form."}
+            />
+          ) : (
+            <div className="table-shell">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border/60">
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Hiker</TableHead>
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Contact</TableHead>
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Emergency</TableHead>
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {currentHikers.map((hiker) => (
+                    <TableRow key={hiker.id} className="border-border/50 hover:bg-accent/30">
+                      <TableCell className="px-6 py-4 align-top">
+                        <div className="space-y-1">
+                          <div className="font-medium text-foreground">{hiker.name}</div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <FileText className="h-4 w-4" />
+                            {hiker.ic}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6 py-4 align-top">
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2 text-foreground">
+                            <Phone className="h-4 w-4 text-muted-foreground" />
+                            {hiker.phone}
+                          </div>
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Mail className="h-4 w-4" />
+                            {hiker.email || "No email"}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6 py-4 align-top">
+                        <Badge variant="outline" className="theme-chip-warning">
+                          <AlertCircle className="h-3 w-3" />
+                          {hiker.emergency_contact}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="px-6 py-4 align-top">
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingId(hiker.id)
+                              setName(hiker.name)
+                              setIc(hiker.ic)
+                              setPhone(hiker.phone)
+                              setEmail(hiker.email || "")
+                              setEmergency(hiker.emergency_contact)
+                              window.scrollTo({ top: 0, behavior: "smooth" })
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => deleteHiker(hiker.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
-      </div>
+      </section>
     </div>
   )
 }
 
-/* =========================================================
-   GUIDER SECTION
-========================================================= */
 function GuiderSection() {
   const [guiders, setGuiders] = useState<Guider[]>([])
   const [filteredGuiders, setFilteredGuiders] = useState<Guider[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage] = useState(8)
 
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -309,7 +477,7 @@ function GuiderSection() {
   const photoInputRef = useRef<HTMLInputElement | null>(null)
 
   const fetchGuiders = async () => {
-    const { data, error } = await supabase.from("guiders").select("*")
+    const { data, error } = await supabase.from("guiders").select("*").order("name")
     if (error) {
       console.error("FETCH GUIDERS ERROR:", error)
       return
@@ -329,22 +497,19 @@ function GuiderSection() {
       const term = searchTerm.toLowerCase()
       setFilteredGuiders(
         guiders.filter(
-          (g) =>
-            g.name.toLowerCase().includes(term) ||
-            g.phone.includes(term) ||
-            g.experience.toLowerCase().includes(term) ||
-            (g.mgp_number && g.mgp_number.toLowerCase().includes(term))
+          (guider) =>
+            guider.name.toLowerCase().includes(term) ||
+            guider.phone.includes(term) ||
+            guider.experience.toLowerCase().includes(term) ||
+            (guider.mgp_number && guider.mgp_number.toLowerCase().includes(term))
         )
       )
     }
     setCurrentPage(1)
   }, [searchTerm, guiders])
 
-  const totalPages = Math.ceil(filteredGuiders.length / itemsPerPage)
-  const currentGuiders = filteredGuiders.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+  const totalPages = Math.ceil(filteredGuiders.length / ITEMS_PER_PAGE)
+  const currentGuiders = filteredGuiders.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
   const resetForm = () => {
     setEditingId(null)
@@ -361,14 +526,11 @@ function GuiderSection() {
     }
   }
 
-  const submitGuider = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const form = e.currentTarget
+  const submitGuider = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
     const selectedPhoto = form.elements.namedItem("photo") as HTMLInputElement | null
     const newPhoto = selectedPhoto?.files?.[0] || photo
-
-    console.log("SUBMIT GUIDER TRIGGERED")
-    console.log("EDITING ID:", editingId)
 
     if (editingId) {
       const updateData: Partial<Guider> = {
@@ -396,19 +558,11 @@ function GuiderSection() {
           return
         }
 
-        const { data } = supabase.storage
-          .from("guiders-photo")
-          .getPublicUrl(filePath)
-
-        console.log("NEW GUIDER PHOTO PUBLIC URL:", data.publicUrl)
+        const { data } = supabase.storage.from("guiders-photo").getPublicUrl(filePath)
         updateData.photo_url = data.publicUrl
       }
 
-      const { error } = await supabase
-        .from("guiders")
-        .update(updateData)
-        .eq("id", editingId)
-
+      const { error } = await supabase.from("guiders").update(updateData).eq("id", editingId)
       if (error) {
         console.error("UPDATE GUIDER ERROR:", error)
         alert("Update guider failed")
@@ -452,10 +606,7 @@ function GuiderSection() {
         return
       }
 
-      const { data } = supabase.storage
-        .from("guiders-photo")
-        .getPublicUrl(filePath)
-
+      const { data } = supabase.storage.from("guiders-photo").getPublicUrl(filePath)
       photoUrl = data.publicUrl
     }
 
@@ -485,7 +636,6 @@ function GuiderSection() {
     if (!confirmDelete) return
 
     const { error } = await supabase.from("guiders").delete().eq("id", id)
-
     if (error) {
       console.error("DELETE GUIDER ERROR:", error)
       alert("Delete guider failed")
@@ -495,388 +645,263 @@ function GuiderSection() {
     fetchGuiders()
   }
 
-  return (
-    <div className="grid lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-1">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              {editingId ? (
-                <>
-                  <Edit className="w-5 h-5 text-amber-600" />
-                  Edit Guider
-                </>
-              ) : (
-                <>
-                  <Shield className="w-5 h-5 text-blue-600" />
-                  Register New Guider
-                </>
-              )}
-            </h2>
+  const averageAge = Math.round(guiders.reduce((sum, guider) => sum + (guider.age || 0), 0) / (guiders.length || 1))
 
+  return (
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+      <section className="space-y-6">
+        <div className="panel-surface">
+          <div className="panel-header">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                {editingId ? "Edit Guider" : "Register New Guider"}
+              </h2>
+              <p className="text-xs text-muted-foreground">Create guider accounts, certifications, and profile records.</p>
+            </div>
             {editingId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
+              <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
                 Cancel
-              </button>
+              </Button>
             )}
           </div>
 
-          <form onSubmit={submitGuider} className="space-y-4">
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-3">
-                Login Credentials
-              </h4>
-
-              <input
-                type="text"
+          <form onSubmit={submitGuider} className="space-y-5 p-5">
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Login Credentials</p>
+                <p className="text-xs text-muted-foreground">Used only when creating a new guider account.</p>
+              </div>
+              <Input
                 placeholder={editingId ? "Username cannot be edited here" : "Username"}
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(event) => setUsername(event.target.value)}
                 disabled={!!editingId}
                 required={!editingId}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-black mb-3 disabled:bg-gray-100"
               />
-
-              <input
+              <Input
                 type="password"
                 placeholder={editingId ? "Password cannot be edited here" : "Password"}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) => setPassword(event.target.value)}
                 disabled={!!editingId}
                 required={!editingId}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-black disabled:bg-gray-100"
               />
             </div>
 
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-3">
-                Personal Information
-              </h4>
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Personal Information</p>
+                <p className="text-xs text-muted-foreground">Profile details shown in the guider directory.</p>
+              </div>
 
-              <input
-                placeholder="Full Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-black mb-3"
-                required
-              />
-
-              <input
-                placeholder="Phone Number"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-black mb-3"
-                required
-              />
-
-              <input
-                placeholder="Age"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-black mb-3"
-                required
-              />
-
-              <input
+              <Input placeholder="Full Name" value={name} onChange={(event) => setName(event.target.value)} required />
+              <Input placeholder="Phone Number" value={phone} onChange={(event) => setPhone(event.target.value)} required />
+              <Input placeholder="Age" value={age} onChange={(event) => setAge(event.target.value)} required />
+              <Input
                 placeholder="Experience (years)"
                 value={experience}
-                onChange={(e) => setExperience(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-black mb-3"
+                onChange={(event) => setExperience(event.target.value)}
                 required
               />
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                  <BadgeCheck className="w-4 h-4 text-emerald-600" />
+              <div className="space-y-2">
+                <Label htmlFor="mgp-number" className="flex items-center gap-2">
+                  <BadgeCheck className="theme-text-success h-4 w-4" />
                   MGP Number
-                </label>
-
-                <input
-                  placeholder="e.g., MGP-2024-001"
+                </Label>
+                <Input
+                  id="mgp-number"
+                  placeholder="e.g. MGP-2024-001"
                   value={mgpNumber}
-                  onChange={(e) => setMgpNumber(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-black"
+                  onChange={(event) => setMgpNumber(event.target.value)}
                   required
                 />
               </div>
             </div>
 
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                <Camera className="w-4 h-4" />
+            <div className="space-y-2">
+              <Label htmlFor="guider-photo" className="flex items-center gap-2">
+                <Camera className="h-4 w-4" />
                 Profile Photo
-              </label>
-
-              <input
+              </Label>
+              <Input
+                id="guider-photo"
                 type="file"
                 name="photo"
                 ref={photoInputRef}
                 accept="image/*"
-                onChange={(e) => setPhoto(e.target.files?.[0] || null)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(event) => setPhoto(event.target.files?.[0] || null)}
               />
-
-              {editingId && (
-                <p className="text-xs text-gray-500 mt-2">
-                  Leave empty if you do not want to change the photo.
-                </p>
-              )}
+              {editingId && <p className="text-xs text-muted-foreground">Leave empty if you do not want to change the photo.</p>}
             </div>
 
-            <button
-              type="submit"
-              className={`w-full py-3 rounded-lg font-medium text-white transition ${
-                editingId
-                  ? "bg-amber-600 hover:bg-amber-700"
-                  : "bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
-              }`}
-            >
+            <Button type="submit" className="w-full">
+              {editingId ? <Edit className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
               {editingId ? "Update Guider" : "Create Guider Account"}
-            </button>
+            </Button>
           </form>
         </div>
 
-        <div className="mt-6 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-100 rounded-xl p-6">
-          <h3 className="font-medium text-blue-800 mb-4 flex items-center gap-2">
-            <Shield className="w-5 h-5" />
-            Guider Statistics
-          </h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SectionMetric label="Total Guiders" value={guiders.length} tone="text-primary" />
+          <SectionMetric label="Average Age" value={averageAge} tone="theme-text-warning" />
+        </div>
+      </section>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-              <div className="text-2xl font-bold text-blue-700">
-                {guiders.length}
-              </div>
-              <div className="text-xs text-gray-600 mt-1">Total Guiders</div>
+      <section className="space-y-6">
+        <div className="panel-surface">
+          <div className="panel-header">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Filter Guiders</h3>
+              <p className="text-xs text-muted-foreground">Search by name, phone, experience, or MGP number.</p>
             </div>
-
-            <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-              <div className="text-2xl font-bold text-amber-600">
-                {Math.round(
-                  guiders.reduce((sum, g) => sum + (g.age || 0), 0) /
-                    (guiders.length || 1)
-                )}
-              </div>
-              <div className="text-xs text-gray-600 mt-1">Avg. Age</div>
+            <div className="text-sm text-muted-foreground">
+              Showing {currentGuiders.length} of {filteredGuiders.length}
+            </div>
+          </div>
+          <div className="p-5">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search guiders..."
+                className="pl-10"
+              />
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="lg:col-span-2 space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-            <h3 className="font-medium text-gray-900 flex items-center gap-2">
-              <Filter className="w-5 h-5" />
-              Filter Guiders
-            </h3>
-
-            <div className="text-sm text-gray-600">
-              Showing {currentGuiders.length} of {filteredGuiders.length} guiders
+        <div className="panel-surface overflow-hidden">
+          <div className="panel-header">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Guider Directory</h3>
+              <p className="text-xs text-muted-foreground">Professional mountain guides, certifications, and contact records.</p>
             </div>
-          </div>
-
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-
-            <input
-              type="text"
-              placeholder="Search by name, phone, experience, or MGP..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            <SectionPager
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPrev={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              onNext={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
             />
           </div>
-        </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="font-medium text-gray-900">Guider Directory</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Professional mountain guides with experience
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                <span className="px-3 py-1.5 text-sm text-gray-700">
-                  Page {currentPage} of {totalPages || 1}
-                </span>
-
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages || totalPages === 0}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
+          {currentGuiders.length === 0 ? (
+            <EmptyState
+              icon={<Shield className="h-6 w-6 text-muted-foreground" />}
+              title="No guiders found"
+              description={searchTerm ? "Try adjusting your search term." : "Register your first guider account."}
+            />
+          ) : (
+            <div className="table-shell">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border/60">
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Guider</TableHead>
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Contact</TableHead>
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Experience</TableHead>
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">MGP</TableHead>
+                    <TableHead className="px-6 text-xs font-semibold uppercase text-muted-foreground">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {currentGuiders.map((guider) => (
+                    <TableRow key={guider.id} className="border-border/50 hover:bg-accent/30">
+                      <TableCell className="px-6 py-4 align-top">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="size-12 border border-border">
+                            <AvatarImage src={guider.photo_url || undefined} alt={guider.name} />
+                            <AvatarFallback>
+                              <User className="h-5 w-5 text-muted-foreground" />
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="space-y-1">
+                            <div className="font-medium text-foreground">{guider.name}</div>
+                            <div className="text-sm text-muted-foreground">Age: {guider.age}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6 py-4 align-top">
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2 text-foreground">
+                            <Phone className="h-4 w-4 text-muted-foreground" />
+                            {guider.phone}
+                          </div>
+                          <div className="text-muted-foreground">User ID: {guider.user_id}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6 py-4 align-top">
+                        <Badge variant="outline" className="theme-chip-info">
+                          {guider.experience}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="px-6 py-4 align-top">
+                        {guider.mgp_number ? (
+                          <Badge variant="outline" className="theme-chip-success">
+                            <BadgeCheck className="h-3 w-3" />
+                            {guider.mgp_number}
+                          </Badge>
+                        ) : (
+                          <span className="text-sm italic text-muted-foreground">Not assigned</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="px-6 py-4 align-top">
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingId(guider.id)
+                              setUsername("")
+                              setPassword("")
+                              setName(guider.name)
+                              setPhone(guider.phone)
+                              setAge(String(guider.age))
+                              setExperience(guider.experience)
+                              setMgpNumber(guider.mgp_number || "")
+                              setPhoto(null)
+                              if (photoInputRef.current) {
+                                photoInputRef.current.value = ""
+                              }
+                              window.scrollTo({ top: 0, behavior: "smooth" })
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button type="button" variant="destructive" size="sm" onClick={() => deleteGuider(guider.id)}>
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Guider Profile
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contact & Details
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Experience
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    MGP Number
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-gray-200">
-                {currentGuiders.map((guider) => (
-                  <tr key={guider.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          {guider.photo_url ? (
-                          <Image
-                              src={guider.photo_url}
-                              alt={guider.name}
-                              width={48}
-                              height={48}
-                              unoptimized
-                              className="rounded-full object-cover border-2 border-blue-100"
-                              />
-                          ) : (
-                            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center border-2 border-blue-200">
-                              <User className="w-6 h-6 text-blue-600" />
-                            </div>
-                          )}
-
-                          <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-blue-600 rounded-full border-2 border-white flex items-center justify-center">
-                            <Shield className="w-3 h-3 text-white" />
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {guider.name}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            Age: {guider.age}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-gray-900">
-                          <Phone className="w-4 h-4" />
-                          {guider.phone}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          ID: {guider.user_id}
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                        {guider.experience}
-                      </span>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      {guider.mgp_number ? (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-emerald-100 text-emerald-800">
-                          <BadgeCheck className="w-3.5 h-3.5" />
-                          {guider.mgp_number}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-gray-400 italic">
-                          Not assigned
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(guider.id)
-                            setUsername("")
-                            setPassword("")
-                            setName(guider.name)
-                            setPhone(guider.phone)
-                            setAge(String(guider.age))
-                            setExperience(guider.experience)
-                            setMgpNumber(guider.mgp_number || "")
-                            setPhoto(null)
-                            if (photoInputRef.current) {
-                              photoInputRef.current.value = ""
-                            }
-                            window.scrollTo({ top: 0, behavior: "smooth" })
-                          }}
-                          className="px-3 py-1.5 text-sm bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition flex items-center gap-1"
-                        >
-                          <Edit className="w-4 h-4" />
-                          Edit
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => deleteGuider(guider.id)}
-                          className="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition flex items-center gap-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {currentGuiders.length === 0 && (
-              <div className="p-12 text-center">
-                <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mb-4">
-                  <Shield className="w-6 h-6 text-gray-400" />
-                </div>
-
-                <h3 className="font-medium text-gray-900 mb-2">
-                  No guiders found
-                </h3>
-
-                <p className="text-gray-600 max-w-sm mx-auto">
-                  {searchTerm
-                    ? "Try adjusting your search term"
-                    : "Register your first guider"}
-                </p>
-              </div>
-            )}
-          </div>
+          )}
         </div>
-      </div>
+      </section>
+    </div>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center p-12 text-center">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">{icon}</div>
+      <h3 className="font-medium text-foreground">{title}</h3>
+      <p className="mt-2 max-w-sm text-sm text-muted-foreground">{description}</p>
     </div>
   )
 }

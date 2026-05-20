@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 export async function GET() {
   const { data, error } = await supabase
     .from('hikers')
-    .select('id, name, ic')
+    .select('id, name, ic, email')
     .order('created_at', { ascending: false })
 
   if (error) {
