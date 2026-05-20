@@ -43,16 +43,19 @@ export async function POST(req: Request) {
 
   try {
     const supabase = createSupabaseAdminClient()
-    const { data: hiker, error } = await supabase
-      .from("hikers")
-      .select("id, name, ic, email, created_at")
-      .eq("email", email)
-      .maybeSingle<HikerRecord>()
+        const { data: hikers, error } = await supabase
+        .from("hikers")
+        .select("id, name, ic, email, created_at")
+        .eq("email", email)
+        .order("created_at", { ascending: false })
+        .limit(1)
 
-    if (error) {
-      console.error("Certificate hiker lookup failed:", error)
-      return serverError("Failed to look up hiker", 500)
-    }
+      if (error) {
+        console.error("Certificate hiker lookup failed:", error)
+        return serverError("Failed to look up hiker", 500)
+      }
+
+      const hiker = hikers?.[0] as HikerRecord | undefined
 
     if (!hiker) {
       return serverError("Hiker not found", 404)
