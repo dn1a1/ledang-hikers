@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   Bell,
   BellOff,
-  CheckCircle2,
   Clock,
   MapPin,
   Navigation,
@@ -14,12 +13,14 @@ import {
   RefreshCw,
   Satellite,
   Shield,
+  ShieldCheck,
   User,
   UserCheck,
   Volume2,
   VolumeX,
   Zap,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -174,7 +175,9 @@ export default function EmergencyAlertsPage() {
   useEffect(() => {
     if (!audioRef.current) return
 
-    if (soundEnabled && alerts.length > 0) {
+    const hasNewAlerts = alerts.some((alert) => alert.status === "NEW")
+
+    if (soundEnabled && hasNewAlerts) {
       audioRef.current.currentTime = 0
       audioRef.current.play().catch(() => {})
       return
@@ -182,7 +185,7 @@ export default function EmergencyAlertsPage() {
 
     audioRef.current.pause()
     audioRef.current.currentTime = 0
-  }, [alerts.length, soundEnabled])
+  }, [alerts, soundEnabled])
 
   async function fetchAlerts() {
     setIsLoading(true)
@@ -207,7 +210,7 @@ export default function EmergencyAlertsPage() {
     }
   }
 
-  async function acknowledgeAlert(id: number) {
+  async function handleAcknowledge(id: number) {
     const { error } = await supabase
       .from("emergency_alerts")
       .update({ status: "ACKNOWLEDGED", acknowledged_at: new Date().toISOString() })
@@ -215,11 +218,12 @@ export default function EmergencyAlertsPage() {
 
     if (error) {
       console.error("acknowledge emergency error:", error)
-      alert("Gagal acknowledge emergency")
+      toast.error("Failed to acknowledge emergency alert")
       return
     }
 
     setAlerts((previous) => previous.filter((alert) => alert.id !== id))
+    toast.success("Emergency alert acknowledged successfully")
   }
 
   function openGoogleMaps(lat: number, lng: number) {
@@ -426,7 +430,7 @@ export default function EmergencyAlertsPage() {
                                   <Zap className="h-3 w-3" />
                                   {meta.label}
                                 </Badge>
-                                <Badge className="theme-chip-warning hover:bg-amber-500/10">
+                                <Badge className="theme-chip-danger hover:bg-red-500/10">
                                   {alert.status}
                                 </Badge>
                                 <Badge variant="outline" className="theme-chip-info">
@@ -504,12 +508,15 @@ export default function EmergencyAlertsPage() {
                             <Button
                               type="button"
                               className="w-full bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
-                              onClick={() => acknowledgeAlert(alert.id)}
+                              onClick={() => handleAcknowledge(alert.id)}
+                              disabled={alert.status === "ACKNOWLEDGED"}
                             >
-                              <CheckCircle2 className="h-4 w-4" />
-                              Acknowledge Alert
+                              <ShieldCheck className="h-4 w-4" />
+                              Acknowledge
                             </Button>
-                            <p className="text-xs text-muted-foreground">Status changes to acknowledged and removes it from the live queue.</p>
+                            <p className="text-xs text-muted-foreground">
+                              Status changes to acknowledged so the hiker knows the incident has been seen.
+                            </p>
                           </div>
                         </div>
                       </div>

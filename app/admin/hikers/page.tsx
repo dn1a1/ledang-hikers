@@ -9,7 +9,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit,
+  Eye,
   FileText,
+  LoaderCircle,
   Mail,
   Phone,
   Search,
@@ -23,8 +25,23 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import {
   Table,
   TableBody,
@@ -41,6 +58,28 @@ type Hiker = {
   phone: string
   email: string
   emergency_contact: string
+  age?: number | null
+  address?: string | null
+  medical_condition?: string | null
+  medical_condition_other?: string | null
+  emergency_name?: string | null
+  emergency_phone?: string | null
+  emergency_relationship?: string | null
+}
+
+type DeclarationItem = {
+  id?: number
+  item_type?: string | null
+  entry_quantity?: number | string | null
+  quantity?: number | string | null
+  type?: string | null
+}
+
+type DeclarationData = {
+  id?: number
+  hiker_id?: number | string
+  hikers?: Hiker | Hiker[] | null
+  declaration_items?: DeclarationItem[] | null
 }
 
 type Guider = {
@@ -176,6 +215,10 @@ function HikerSection() {
   const [filteredHikers, setFilteredHikers] = useState<Hiker[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
+  const [selectedHikerId, setSelectedHikerId] = useState<string | null>(null)
+  const [isDeclarationOpen, setIsDeclarationOpen] = useState(false)
+  const [declarationData, setDeclarationData] = useState<DeclarationData | null>(null)
+  const [loadingDeclaration, setLoadingDeclaration] = useState(false)
 
   const [name, setName] = useState("")
   const [ic, setIc] = useState("")
@@ -227,6 +270,49 @@ function HikerSection() {
     setEmail("")
     setEmergency("")
   }
+
+  const handleViewDeclaration = async (hikerId: string | number) => {
+    setSelectedHikerId(String(hikerId))
+    setIsDeclarationOpen(true)
+    setLoadingDeclaration(true)
+    setDeclarationData(null)
+
+    const { data, error } = await supabase
+      .from("declarations")
+      .select(`
+        *,
+        hikers (*),
+        declaration_items (*)
+      `)
+      .eq("hiker_id", hikerId)
+      .single()
+
+    if (!error) {
+      setDeclarationData(data)
+    } else if (error.code !== "PGRST116") {
+      console.error("FETCH DECLARATION ERROR:", error)
+    }
+
+    setLoadingDeclaration(false)
+  }
+
+  const handleDeclarationOpenChange = (open: boolean) => {
+    setIsDeclarationOpen(open)
+    if (!open) {
+      setSelectedHikerId(null)
+      setDeclarationData(null)
+      setLoadingDeclaration(false)
+    }
+  }
+
+  const declarationRecord = declarationData?.hikers
+  const declarationHiker = Array.isArray(declarationRecord) ? declarationRecord[0] : declarationRecord
+  const declarationItems = Array.isArray(declarationData?.declaration_items)
+    ? declarationData?.declaration_items ?? []
+    : []
+  const hasMedicalCondition = Boolean(
+    declarationHiker?.medical_condition && declarationHiker.medical_condition !== "Tiada"
+  )
 
   const deleteHiker = async (id: number) => {
     const confirmDelete = confirm("Are you sure you want to delete this hiker?")
@@ -418,11 +504,12 @@ function HikerSection() {
                         </Badge>
                       </TableCell>
                       <TableCell className="px-6 py-4 align-top">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex min-w-[180px] flex-col gap-2">
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
+                            className="w-full justify-start"
                             onClick={() => {
                               setEditingId(hiker.id)
                               setName(hiker.name)
@@ -438,8 +525,19 @@ function HikerSection() {
                           </Button>
                           <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-start"
+                            onClick={() => handleViewDeclaration(hiker.id)}
+                          >
+                            <Eye className="h-4 w-4" />
+                            View Declaration
+                          </Button>
+                          <Button
+                            type="button"
                             variant="destructive"
                             size="sm"
+                            className="w-full justify-start"
                             onClick={() => deleteHiker(hiker.id)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -455,6 +553,126 @@ function HikerSection() {
           )}
         </div>
       </section>
+
+      <Dialog open={isDeclarationOpen} onOpenChange={handleDeclarationOpenChange}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="border-b px-6 py-5 text-left">
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-primary" />
+              View Declaration
+            </DialogTitle>
+            <DialogDescription>
+              Review the full hiker declaration form, emergency details, and submitted item entries.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[calc(90vh-88px)] overflow-y-auto px-6 py-5">
+            {loadingDeclaration ? (
+              <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                <LoaderCircle className="h-6 w-6 animate-spin text-primary" />
+                <span>Loading declaration...</span>
+              </div>
+            ) : !declarationData || !declarationHiker ? (
+              <EmptyState
+                icon={<FileText className="h-6 w-6 text-muted-foreground" />}
+                title="No declaration submitted"
+                description="This hiker does not have a declaration record yet."
+              />
+            ) : (
+              <div className="space-y-5">
+                <Card className="gap-0">
+                  <CardHeader className="pb-4">
+                    <CardTitle>Personal Information</CardTitle>
+                    <CardDescription>Core identity and contact information submitted by the hiker.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <DeclarationField label="Name" value={declarationHiker.name} />
+                    <DeclarationField label="IC" value={declarationHiker.ic} />
+                    <DeclarationField label="Phone" value={declarationHiker.phone} />
+                    <DeclarationField label="Email" value={declarationHiker.email} />
+                    <DeclarationField label="Age" value={declarationHiker.age} />
+                    <DeclarationField label="Address" value={declarationHiker.address} className="sm:col-span-2" />
+                  </CardContent>
+                </Card>
+
+                <Card className="gap-0">
+                  <CardHeader className="pb-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div>
+                        <CardTitle>Medical Information</CardTitle>
+                        <CardDescription>Health declarations to help the admin team assess safety needs.</CardDescription>
+                      </div>
+                      {hasMedicalCondition && (
+                        <Badge variant="destructive" className="gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          Medical Condition
+                        </Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <DeclarationField label="Medical Condition" value={declarationHiker.medical_condition} />
+                    <DeclarationField
+                      label="Medical Condition Other"
+                      value={declarationHiker.medical_condition_other}
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card className="gap-0">
+                  <CardHeader className="pb-4">
+                    <CardTitle>Emergency Contact</CardTitle>
+                    <CardDescription>Primary contact details for urgent communication.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-3">
+                    <DeclarationField label="Emergency Name" value={declarationHiker.emergency_name} />
+                    <DeclarationField label="Emergency Phone" value={declarationHiker.emergency_phone} />
+                    <DeclarationField
+                      label="Emergency Relationship"
+                      value={declarationHiker.emergency_relationship}
+                    />
+                  </CardContent>
+                </Card>
+
+                <Separator />
+
+                <Card className="gap-0">
+                  <CardHeader className="pb-4">
+                    <CardTitle>Declaration Items</CardTitle>
+                    <CardDescription>Submitted inventory or entry items linked to this declaration.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {declarationItems.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+                        No declaration items submitted.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-lg border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Item Type</TableHead>
+                              <TableHead>Entry Quantity</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {declarationItems.map((item, index) => (
+                              <TableRow key={item.id ?? `${selectedHikerId}-${index}`}>
+                                <TableCell>{item.item_type || item.type || "Not provided"}</TableCell>
+                                <TableCell>{item.entry_quantity ?? item.quantity ?? "-"}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -902,6 +1120,23 @@ function EmptyState({
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">{icon}</div>
       <h3 className="font-medium text-foreground">{title}</h3>
       <p className="mt-2 max-w-sm text-sm text-muted-foreground">{description}</p>
+    </div>
+  )
+}
+
+function DeclarationField({
+  label,
+  value,
+  className = "",
+}: {
+  label: string
+  value: string | number | null | undefined
+  className?: string
+}) {
+  return (
+    <div className={`rounded-xl border bg-muted/20 p-4 ${className}`}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 text-sm text-foreground">{value || "Not provided"}</p>
     </div>
   )
 }
