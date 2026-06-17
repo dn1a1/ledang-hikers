@@ -57,6 +57,24 @@ export async function POST(req: Request) {
       )
     }
 
+    const { data: qrSession, error: qrError } = await supabase
+      .from("qr_sessions")
+      .select("current_count, capacity, status")
+      .eq("id", session_id)
+      .single()
+
+    if (qrError || !qrSession) {
+      return NextResponse.json({ error: "Session not found" }, { status: 400 })
+    }
+
+    if (qrSession.status !== "Active") {
+      return NextResponse.json({ error: "Session is not active" }, { status: 400 })
+    }
+
+    if ((qrSession.current_count ?? 0) >= qrSession.capacity) {
+      return NextResponse.json({ error: "Session is full" }, { status: 400 })
+    }
+
     const { data: hiker, error: hikerError } = await supabase
       .from("hikers")
       .insert({
@@ -69,7 +87,7 @@ export async function POST(req: Request) {
         address,
         medical_condition,
         medical_condition_other:
-          medical_condition === "Lain-lain"
+          medical_condition === "Other"
             ? medical_condition_other ?? null
             : null,
         emergency_name,
@@ -82,7 +100,7 @@ export async function POST(req: Request) {
     if (hikerError || !hiker) {
       console.error("HIKER INSERT ERROR:", hikerError)
       return NextResponse.json(
-        { error: hikerError?.message || "Gagal daftar hiker" },
+        { error: hikerError?.message || "Failed to register hiker" },
         { status: 400 }
       )
     }
@@ -106,6 +124,11 @@ export async function POST(req: Request) {
         { status: 400 }
       )
     }
+
+    await supabase
+      .from("qr_sessions")
+      .update({ current_count: (qrSession.current_count ?? 0) + 1 })
+      .eq("id", session_id)
 
     return NextResponse.json(
       {

@@ -18,7 +18,7 @@ const poppins = Poppins({
 // Metadata
 // =====================
 export const metadata: Metadata = {
-  title: "Ledang Hikers",
+  title: "Trail Guard",
   description: "Hiker tracking and monitoring system",
 };
 

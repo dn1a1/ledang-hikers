@@ -8,10 +8,12 @@ import {
   BellOff,
   Clock,
   MapPin,
+  MessageCircle,
   Navigation,
   Radio,
   RefreshCw,
   Satellite,
+  Send,
   Shield,
   ShieldCheck,
   User,
@@ -24,6 +26,17 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
@@ -42,11 +55,21 @@ type EmergencyAlert = {
   latitude: number | null
   longitude: number | null
   hiker_id: number | null
+  resolution_notes: string | null
   hikers: Hiker | null
 }
 
 type EmergencyAlertPayload = Omit<EmergencyAlert, "hikers"> & {
   hikers?: Hiker | null
+}
+
+type EmergencyResponse = {
+  id: number
+  emergency_id: number
+  sender: "admin" | "guider"
+  sender_name: string
+  message: string
+  created_at: string
 }
 
 function formatTimeAgo(dateString: string) {
@@ -112,8 +135,20 @@ export default function EmergencyAlertsPage() {
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
   const [now, setNow] = useState(new Date())
+  const [resolveDialog, setResolveDialog] = useState<{ open: boolean; alertId: number | null; notes: string }>({
+    open: false,
+    alertId: null,
+    notes: "",
+  })
+  const [responses, setResponses] = useState<Record<number, EmergencyResponse[]>>({})
+  const [replyInputs, setReplyInputs] = useState<Record<number, string>>({})
+  const [replySending, setReplySending] = useState<Record<number, boolean>>({})
+  const [chatOpen, setChatOpen] = useState<Record<number, boolean>>({})
+  const [adminUsername, setAdminUsername] = useState("Admin")
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const alertsRef = useRef<EmergencyAlert[]>([])
+  const chatBottomRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -127,6 +162,47 @@ export default function EmergencyAlertsPage() {
 
   useEffect(() => {
     fetchAlerts()
+  }, [])
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("user")
+      if (stored) {
+        const u = JSON.parse(stored) as { username?: string }
+        setAdminUsername(u.username || "Admin")
+      }
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("emergency-responses-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "emergency_responses" }, (payload) => {
+        const msg = payload.new as EmergencyResponse
+        setResponses((prev) => ({
+          ...prev,
+          [msg.emergency_id]: [...(prev[msg.emergency_id] ?? []), msg],
+        }))
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (alertsRef.current.length > 0) {
+        void fetchResponses(alertsRef.current.map((a) => a.id))
+      }
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void fetchAlerts(true)
+    }, 10000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -161,8 +237,11 @@ export default function EmergencyAlertsPage() {
 
           setAlerts((previous) => {
             if (previous.some((item) => item.id === alert.id)) return previous
-            return [alert, ...previous]
+            const next = [alert, ...previous]
+            alertsRef.current = next
+            return next
           })
+          setResponses((prev) => ({ ...prev, [newAlert.id]: prev[newAlert.id] ?? [] }))
         }
       )
       .subscribe()
@@ -187,14 +266,65 @@ export default function EmergencyAlertsPage() {
     audioRef.current.currentTime = 0
   }, [alerts, soundEnabled])
 
-  async function fetchAlerts() {
-    setIsLoading(true)
+  useEffect(() => {
+    for (const alertId of Object.keys(responses)) {
+      const id = Number(alertId)
+      if (chatOpen[id]) {
+        const el = chatBottomRefs.current[id]
+        if (el) el.scrollIntoView({ behavior: "smooth" })
+      }
+    }
+  }, [responses, chatOpen])
+
+  async function fetchResponses(alertIds: number[]) {
+    if (alertIds.length === 0) return
+
+    const { data, error } = await supabase
+      .from("emergency_responses")
+      .select("*")
+      .in("emergency_id", alertIds)
+      .order("created_at", { ascending: true })
+
+    if (error) { console.error("fetch responses error:", error); return }
+
+    const grouped: Record<number, EmergencyResponse[]> = {}
+    for (const r of data ?? []) {
+      if (!grouped[r.emergency_id]) grouped[r.emergency_id] = []
+      grouped[r.emergency_id].push(r as EmergencyResponse)
+    }
+    setResponses(grouped)
+  }
+
+  async function sendAdminReply(alertId: number) {
+    const text = replyInputs[alertId]?.trim()
+    if (!text) return
+
+    setReplySending((prev) => ({ ...prev, [alertId]: true }))
+
+    const { error } = await supabase.from("emergency_responses").insert({
+      emergency_id: alertId,
+      sender: "admin",
+      sender_name: adminUsername,
+      message: text,
+    })
+
+    if (error) {
+      toast.error("Failed to send message")
+    } else {
+      setReplyInputs((prev) => ({ ...prev, [alertId]: "" }))
+    }
+
+    setReplySending((prev) => ({ ...prev, [alertId]: false }))
+  }
+
+  async function fetchAlerts(silent = false) {
+    if (!silent) setIsLoading(true)
 
     try {
       const { data, error } = await supabase
         .from("emergency_alerts")
         .select("*, hikers (id, name, email)")
-        .eq("status", "NEW")
+        .in("status", ["NEW", "ACKNOWLEDGED"])
         .order("created_at", { ascending: false })
 
       if (error) {
@@ -202,11 +332,17 @@ export default function EmergencyAlertsPage() {
         return
       }
 
-      setAlerts(data ?? [])
+      const alertData = data ?? []
+      setAlerts(alertData)
+      alertsRef.current = alertData
+
+      if (alertData.length > 0) {
+        await fetchResponses(alertData.map((a) => a.id))
+      }
     } catch (error) {
       console.error("unexpected emergency fetch error:", error)
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
   }
 
@@ -222,8 +358,32 @@ export default function EmergencyAlertsPage() {
       return
     }
 
-    setAlerts((previous) => previous.filter((alert) => alert.id !== id))
-    toast.success("Emergency alert acknowledged successfully")
+    setAlerts((previous) =>
+      previous.map((alert) =>
+        alert.id === id ? { ...alert, status: "ACKNOWLEDGED", acknowledged_at: new Date().toISOString() } : alert
+      )
+    )
+    toast.success("Emergency alert acknowledged")
+  }
+
+  async function handleResolve() {
+    const { alertId, notes } = resolveDialog
+    if (!alertId) return
+
+    const { error } = await supabase
+      .from("emergency_alerts")
+      .update({ status: "RESOLVED", resolution_notes: notes.trim() })
+      .eq("id", alertId)
+
+    if (error) {
+      console.error("resolve emergency error:", error)
+      toast.error("Failed to resolve emergency alert")
+      return
+    }
+
+    setAlerts((previous) => previous.filter((alert) => alert.id !== alertId))
+    setResolveDialog({ open: false, alertId: null, notes: "" })
+    toast.success("Emergency case marked as resolved")
   }
 
   function openGoogleMaps(lat: number, lng: number) {
@@ -323,7 +483,7 @@ export default function EmergencyAlertsPage() {
                   {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                   {soundEnabled ? "Alarm On" : "Alarm Off"}
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={fetchAlerts} disabled={isLoading}>
+                <Button type="button" variant="outline" size="sm" onClick={() => void fetchAlerts()} disabled={isLoading}>
                   <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
                   {isLoading ? "Refreshing..." : "Refresh"}
                 </Button>
@@ -505,21 +665,121 @@ export default function EmergencyAlertsPage() {
                           </div>
 
                           <div className="space-y-3">
-                            <Button
-                              type="button"
-                              className="w-full bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
-                              onClick={() => handleAcknowledge(alert.id)}
-                              disabled={alert.status === "ACKNOWLEDGED"}
-                            >
-                              <ShieldCheck className="h-4 w-4" />
-                              Acknowledge
-                            </Button>
-                            <p className="text-xs text-muted-foreground">
-                              Status changes to acknowledged so the hiker knows the incident has been seen.
-                            </p>
+                            {alert.status === "NEW" ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  className="w-full bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
+                                  onClick={() => handleAcknowledge(alert.id)}
+                                >
+                                  <ShieldCheck className="h-4 w-4" />
+                                  Acknowledge
+                                </Button>
+                                <p className="text-xs text-muted-foreground">
+                                  Confirm incident received and stop alarm.
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+                                  Acknowledged — awaiting resolution
+                                </div>
+                                <Button
+                                  type="button"
+                                  className="w-full bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
+                                  onClick={() => setResolveDialog({ open: true, alertId: alert.id, notes: "" })}
+                                >
+                                  <ShieldCheck className="h-4 w-4" />
+                                  Mark as Resolved
+                                </Button>
+                                <p className="text-xs text-muted-foreground">
+                                  Case fully settled — removes from active list.
+                                </p>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Guider communication thread */}
+                    <div className="border-t border-border/60">
+                      {/* Toggle header */}
+                      <button
+                        type="button"
+                        onClick={() => setChatOpen((prev) => ({ ...prev, [alert.id]: !prev[alert.id] }))}
+                        className="flex w-full items-center justify-between px-5 py-3 text-left transition-colors hover:bg-accent/30"
+                      >
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm font-semibold text-foreground">Guider Communication</span>
+                          {(responses[alert.id] ?? []).length > 0 && (
+                            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+                              {(responses[alert.id] ?? []).length}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {chatOpen[alert.id] ? "Hide" : "Show"}
+                        </span>
+                      </button>
+
+                      {chatOpen[alert.id] && (
+                        <div className="px-5 pb-5">
+                          {/* Chat messages */}
+                          <div className="mb-3 flex h-56 flex-col gap-2 overflow-y-auto rounded-2xl border border-border/60 bg-muted/20 p-3">
+                            {(responses[alert.id] ?? []).length === 0 ? (
+                              <div className="flex flex-1 items-center justify-center">
+                                <p className="text-xs italic text-muted-foreground">No messages yet. Guider has not sent a report.</p>
+                              </div>
+                            ) : (
+                              <>
+                                {(responses[alert.id] ?? []).map((msg) => (
+                                  <div
+                                    key={msg.id}
+                                    className={cn("flex", msg.sender === "admin" ? "justify-end" : "justify-start")}
+                                  >
+                                    <div
+                                      className={cn(
+                                        "max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm",
+                                        msg.sender === "admin"
+                                          ? "bg-primary text-primary-foreground"
+                                          : "bg-background text-foreground border border-border/60"
+                                      )}
+                                    >
+                                      <p className="mb-0.5 text-[10px] font-semibold opacity-60">{msg.sender_name}</p>
+                                      <p className="leading-snug">{msg.message}</p>
+                                      <p className="mt-0.5 text-right text-[10px] opacity-45">
+                                        {new Date(msg.created_at).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit" })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                                <div ref={(el) => { chatBottomRefs.current[alert.id] = el }} />
+                              </>
+                            )}
+                          </div>
+
+                          {/* Reply input */}
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Reply to guider..."
+                              value={replyInputs[alert.id] ?? ""}
+                              onChange={(e) => setReplyInputs((prev) => ({ ...prev, [alert.id]: e.target.value }))}
+                              onKeyDown={(e) => { if (e.key === "Enter") void sendAdminReply(alert.id) }}
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={!replyInputs[alert.id]?.trim() || replySending[alert.id]}
+                              onClick={() => void sendAdminReply(alert.id)}
+                            >
+                              <Send className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </section>
                 )
@@ -567,6 +827,56 @@ export default function EmergencyAlertsPage() {
       </div>
 
       <audio ref={audioRef} src="/alarm.mp3" loop />
+
+      <Dialog
+        open={resolveDialog.open}
+        onOpenChange={(open) => setResolveDialog((prev) => ({ ...prev, open }))}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              Resolve Emergency
+            </DialogTitle>
+            <DialogDescription>
+              Please specify the actions taken before closing this emergency case.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            <Label htmlFor="resolution-notes">Action Report</Label>
+            <Textarea
+              id="resolution-notes"
+              placeholder="Example: Victim transported to hospital, condition stable..."
+              rows={5}
+              value={resolveDialog.notes}
+              onChange={(e) => setResolveDialog((prev) => ({ ...prev, notes: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground">
+              {resolveDialog.notes.trim().length} / 20 characters minimum
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResolveDialog({ open: false, alertId: null, notes: "" })}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={resolveDialog.notes.trim().length < 20}
+              onClick={handleResolve}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Confirm &amp; Resolve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

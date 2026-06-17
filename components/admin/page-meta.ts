@@ -48,7 +48,7 @@ export function getAdminPageMeta(pathname: string): AdminPageMeta {
 
   return adminPageMetaByPath[normalizedPath] ?? {
     title: "Admin Console",
-    description: "Manage Ledang Hikers administrative tools and monitoring.",
+    description: "Manage Trail Guard administrative tools and monitoring.",
   }
 }
 

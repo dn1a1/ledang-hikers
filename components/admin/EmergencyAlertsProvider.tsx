@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { toast } from "sonner"
 
 import { supabase } from "@/lib/supabase"
 
@@ -11,6 +12,8 @@ type EmergencyAlertsContextValue = {
 
 type EmergencyAlertRow = {
   status?: string | null
+  emergency_type?: string | null
+  hiker_id?: number | null
 }
 
 const EmergencyAlertsContext = createContext<EmergencyAlertsContextValue | null>(null)
@@ -49,6 +52,16 @@ export function EmergencyAlertsProvider({ children }: { children: ReactNode }) {
 
           if (alert.status === "NEW") {
             setAlertCount((current) => current + 1)
+
+            const type = alert.emergency_type
+              ? alert.emergency_type.charAt(0).toUpperCase() + alert.emergency_type.slice(1).toLowerCase()
+              : "Unknown"
+            const hiker = alert.hiker_id ? `HKR-${String(alert.hiker_id).padStart(4, "0")}` : "Unknown hiker"
+
+            toast.error(`Emergency Alert — ${type}`, {
+              description: `${hiker} needs immediate attention.`,
+              duration: 8000,
+            })
           }
 
           void refreshAlertCount()

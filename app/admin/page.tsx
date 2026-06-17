@@ -355,7 +355,7 @@ export default function AdminDashboardPage() {
     <div className="app-shell flex min-h-screen flex-col overflow-hidden">
       <header className="flex shrink-0 flex-col gap-4 border-b border-border/70 bg-background/70 px-4 py-4 backdrop-blur sm:px-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-foreground">Admin Dashboard</h1>
+          <h1 className="text-lg font-semibold text-foreground">Admin Dashboard </h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {new Date().toLocaleDateString("en-MY", {
               weekday: "long",

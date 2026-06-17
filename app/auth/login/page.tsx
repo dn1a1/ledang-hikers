@@ -26,7 +26,7 @@ export default function LoginPage() {
           <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Mountain className="size-4" />
           </div>
-          Ledang Hikers
+          Trail Guard
         </Link>
         <LoginForm className="rounded-xl" />
       </div>

@@ -27,7 +27,7 @@ export default function Navbar() {
           </div>
           <div className="flex flex-col">
             <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              Ledang Hikers
+              Trail Guard
             </span>
             <span className="text-xs font-normal text-muted-foreground">
               Mountaineering Portal
@@ -71,7 +71,7 @@ export default function Navbar() {
                   </div>
                   <div className="flex flex-col">
                     <DrawerTitle className="text-left text-xl font-bold">
-                      Ledang Hikers
+                    trail guard
                     </DrawerTitle>
                     <span className="text-sm text-muted-foreground">
                       Mountaineering Portal

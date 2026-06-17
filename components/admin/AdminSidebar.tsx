@@ -104,7 +104,7 @@ export default function AdminSidebar() {
                   </div>
                   <div className="grid min-w-0 flex-1 text-left group-data-[collapsible=icon]:hidden">
                     <span className="truncate text-sm font-semibold tracking-normal text-sidebar-foreground">
-                      Ledang Hikers
+                      Trail Guard
                     </span>
                     <span className="truncate text-xs text-sidebar-foreground/65">
                       Admin Console

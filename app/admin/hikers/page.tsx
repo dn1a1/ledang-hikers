@@ -228,7 +228,7 @@ function HikerSection() {
   const [editingId, setEditingId] = useState<number | null>(null)
 
   const fetchHikers = async () => {
-    const { data, error } = await supabase.from("hikers").select("*").order("name")
+    const { data, error } = await supabase.from("hikers").select("*").order("created_at", { ascending: false })
     if (error) {
       console.error("FETCH HIKERS ERROR:", error)
       return

@@ -73,7 +73,8 @@ const typeStyles = {
 } as const;
 
 export default function QRManagementPage() {
-  const [date, setDate] = useState("");
+  const today = new Date().toLocaleDateString("en-CA");
+  const [date, setDate] = useState(today);
   const [guiderId, setGuiderId] = useState("");
   const [capacity, setCapacity] = useState("");
   const [qrValue, setQrValue] = useState("");
@@ -135,6 +136,37 @@ export default function QRManagementPage() {
       });
   }, []);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel("qr-sessions-realtime")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "qr_sessions" },
+        (payload) => {
+          const updated = payload.new as QRSessionRow;
+          setQrList((prev) =>
+            prev.map((item) =>
+              item.id === updated.id
+                ? {
+                    ...item,
+                    scanned_count: updated.current_count,
+                    status: updated.status,
+                    capacity: updated.capacity,
+                    qr_type: updated.qr_type,
+                    value: updated.qr_value,
+                  }
+                : item
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const selectedQr = useMemo(
     () => qrList.find((item) => item.value === qrValue) ?? null,
     [qrList, qrValue]
@@ -147,6 +179,11 @@ export default function QRManagementPage() {
   const handleGenerateQR = async () => {
     if (!date || !guiderId || !capacity) {
       alert("Please complete all fields");
+      return;
+    }
+
+    if (date !== today) {
+      alert("Date can only be today");
       return;
     }
 
@@ -214,7 +251,7 @@ export default function QRManagementPage() {
 
   const handleToggleType = async (qr: QRItem) => {
     if (qr.status !== "Active") {
-      alert("Session tidak aktif");
+      alert("Session is not active");
       return;
     }
 
@@ -238,7 +275,7 @@ export default function QRManagementPage() {
     setTogglingId(null);
 
     if (error) {
-      alert("Gagal toggle QR type");
+      alert("Failed to toggle QR type");
       return;
     }
 
@@ -249,7 +286,7 @@ export default function QRManagementPage() {
 
   const handleDisplayQR = (qr: QRItem) => {
     if (qr.status !== "Active") {
-      alert("QR ini tidak aktif");
+      alert("This QR is not active");
       return;
     }
 
@@ -447,6 +484,8 @@ export default function QRManagementPage() {
                   id="hiking-date"
                   type="date"
                   value={date}
+                  min={today}
+                  max={today}
                   onChange={(event) => setDate(event.target.value)}
                   className="h-11"
                 />

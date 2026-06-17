@@ -73,7 +73,7 @@ export default function CheckpointManagementPage() {
     setIsSaving(false)
 
     if (error) {
-      alert("Gagal tambah checkpoint")
+      alert("Failed to add checkpoint")
       console.error("add checkpoint error:", error)
       return
     }
@@ -263,10 +263,10 @@ export default function CheckpointManagementPage() {
 
               <Button type="submit" className="w-full" disabled={isSaving}>
                 <Plus className="h-4 w-4" />
-                {isSaving ? "Saving..." : "Tambah Checkpoint"}
+                {isSaving ? "Saving..." : "Add Checkpoint"}
               </Button>
             </form>
-          </section>
+        </section>
 
           <section className="panel-surface overflow-hidden">
             <div className="panel-header">

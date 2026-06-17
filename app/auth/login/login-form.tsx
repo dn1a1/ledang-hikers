@@ -77,7 +77,7 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
           </div>
           <CardTitle className="text-xl text-foreground">Welcome back</CardTitle>
           <CardDescription>
-            Login with your admin or guider account
+            Login with your admin account
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 p-6">

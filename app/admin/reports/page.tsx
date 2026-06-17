@@ -51,6 +51,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type DateRange = "today" | "week" | "month" | "all";
 type IconComponent = ComponentType<{ size?: number; className?: string; style?: CSSProperties }>;
@@ -74,6 +80,18 @@ interface EmergencyRow {
   created_at: string | null;
   latitude: number | null;
   longitude: number | null;
+  resolution_notes: string | null;
+}
+
+interface EmergencyResponseReportRow {
+  id: number;
+  emergency_id: number;
+  sender: string;
+  sender_name: string;
+  message: string;
+  created_at: string | null;
+  emergency_type: string | null;
+  hiker_name: string;
 }
 
 interface TrendPoint {
@@ -129,6 +147,16 @@ interface EmergencyRawRow extends EmergencyStatusRow {
   emergency_type: string | null;
   latitude: number | null;
   longitude: number | null;
+  resolution_notes: string | null;
+}
+
+interface EmergencyResponseRaw {
+  id: number | null;
+  emergency_id: number | null;
+  sender: string | null;
+  sender_name: string | null;
+  message: string | null;
+  created_at: string | null;
 }
 
 interface HikerNameRow {
@@ -348,6 +376,9 @@ export default function ReportsPage() {
   const [guiderStats, setGuiderStats] = useState<GuiderStat[]>([]);
   const [sessionRows, setSessionRows] = useState<SessionRow[]>([]);
 
+  const [responseRows, setResponseRows] = useState<EmergencyResponseReportRow[]>([]);
+  const [emergencySearch, setEmergencySearch] = useState("");
+  const [reportDialog, setReportDialog] = useState<{ open: boolean; emergency: EmergencyRow | null }>({ open: false, emergency: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -467,7 +498,7 @@ export default function ReportsPage() {
 
       const emergencyQuery = supabase
         .from("emergency_alerts")
-        .select("id, hiker_id, emergency_type, status, created_at, latitude, longitude");
+        .select("id, hiker_id, emergency_type, status, created_at, latitude, longitude, resolution_notes");
       const { data: emergencyData, error: eErr } = await (since ? emergencyQuery.gte("created_at", since) : emergencyQuery)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -488,19 +519,51 @@ export default function ReportsPage() {
           if (h?.id) nameMap[h.id] = h.name ?? "-";
         }
 
-        setEmergencyRows(
-          emergencyRaw.map((e, index) => ({
-            id: e?.id ?? `emergency-${index}`,
-            hiker_name: e?.hiker_id ? nameMap[e.hiker_id] ?? "Unknown" : "Unknown",
-            emergency_type: e?.emergency_type ?? null,
-            status: e?.status ?? null,
-            created_at: e?.created_at ?? null,
-            latitude: isFiniteNumber(e?.latitude) ? e.latitude : null,
-            longitude: isFiniteNumber(e?.longitude) ? e.longitude : null,
-          }))
-        );
+        const mappedEmergencies = emergencyRaw.map((e, index) => ({
+          id: e?.id ?? `emergency-${index}`,
+          hiker_name: e?.hiker_id ? nameMap[e.hiker_id] ?? "Unknown" : "Unknown",
+          emergency_type: e?.emergency_type ?? null,
+          status: e?.status ?? null,
+          created_at: e?.created_at ?? null,
+          latitude: isFiniteNumber(e?.latitude) ? e.latitude : null,
+          longitude: isFiniteNumber(e?.longitude) ? e.longitude : null,
+          resolution_notes: e?.resolution_notes ?? null,
+        }));
+        setEmergencyRows(mappedEmergencies);
+
+        const emergencyIds = emergencyRaw.map((e) => e?.id).filter((id): id is string => Boolean(id));
+        if (emergencyIds.length > 0) {
+          const { data: responsesData, error: rErr } = await supabase
+            .from("emergency_responses")
+            .select("id, emergency_id, sender, sender_name, message, created_at")
+            .in("emergency_id", emergencyIds)
+            .order("created_at", { ascending: true });
+          logQueryWarning("emergency_responses error", rErr);
+
+          const responsesRaw = (responsesData ?? []) as EmergencyResponseRaw[];
+          const emergencyMap: Record<string, { type: string | null; hiker: string }> = {};
+          for (const e of mappedEmergencies) emergencyMap[e.id] = { type: e.emergency_type, hiker: e.hiker_name };
+
+          setResponseRows(
+            responsesRaw
+              .filter((r) => r?.id && r?.emergency_id)
+              .map((r) => ({
+                id: r.id!,
+                emergency_id: r.emergency_id!,
+                sender: r.sender ?? "unknown",
+                sender_name: r.sender_name ?? "-",
+                message: r.message ?? "-",
+                created_at: r.created_at ?? null,
+                emergency_type: emergencyMap[String(r.emergency_id)]?.type ?? null,
+                hiker_name: emergencyMap[String(r.emergency_id)]?.hiker ?? "Unknown",
+              }))
+          );
+        } else {
+          setResponseRows([]);
+        }
       } else {
         setEmergencyRows([]);
+        setResponseRows([]);
       }
 
       const declarationsQuery = supabase.from("declarations").select("created_at");
@@ -799,23 +862,36 @@ export default function ReportsPage() {
           </div>
 
           <div className="mt-6">
-            <SectionCard title="Emergency Cases">
+            <SectionCard
+              title="Emergency Cases"
+              action={
+                <input
+                  type="text"
+                  placeholder="Search hiker name..."
+                  value={emergencySearch}
+                  onChange={(e) => setEmergencySearch(e.target.value)}
+                  className="h-8 w-48 rounded-lg border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              }
+            >
               {emergencyRows.length === 0 ? (
                 <EmptyState message="No emergency cases" />
               ) : (
-                <div className="table-shell">
+                <div className="table-shell max-h-[420px] overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow className="border-border/60">
-                        {["Hiker", "Type", "Status", "Date / Time", "Lat", "Long"].map((h) => (
-                          <TableHead key={h} className="px-4 text-xs font-semibold uppercase text-muted-foreground">
+                        {["Hiker", "Type", "Status", "Date / Time", "Lat", "Long", ""].map((h) => (
+                          <TableHead key={h} className="sticky top-0 bg-background px-4 text-xs font-semibold uppercase text-muted-foreground">
                             {h}
                           </TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {emergencyRows.map((row) => (
+                      {emergencyRows.filter((row) =>
+                        row.hiker_name.toLowerCase().includes(emergencySearch.toLowerCase())
+                      ).map((row) => (
                         <TableRow key={row.id} className="border-border/40 hover:bg-accent/40">
                           <TableCell className="px-4 py-3 font-medium text-foreground">{row.hiker_name}</TableCell>
                           <TableCell className="px-4 py-3 text-muted-foreground">{row.emergency_type ?? "-"}</TableCell>
@@ -825,6 +901,15 @@ export default function ReportsPage() {
                           <TableCell className="px-4 py-3 text-xs text-muted-foreground">{fmt(row.created_at)}</TableCell>
                           <TableCell className="px-4 py-3 font-mono text-xs text-muted-foreground">{formatCoord(row.latitude)}</TableCell>
                           <TableCell className="px-4 py-3 font-mono text-xs text-muted-foreground">{formatCoord(row.longitude)}</TableCell>
+                          <TableCell className="px-4 py-3">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setReportDialog({ open: true, emergency: row })}
+                            >
+                              View Report
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1005,6 +1090,69 @@ export default function ReportsPage() {
           </SectionCard>
         </section>
       </div>
+
+      {/* Report Dialog */}
+      <Dialog open={reportDialog.open} onOpenChange={(open) => setReportDialog((prev) => ({ ...prev, open }))}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          {reportDialog.emergency && (() => {
+            const e = reportDialog.emergency;
+            const thread = responseRows.filter((r) => r.emergency_id === Number(e.id));
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-base">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    Emergency Report #{e.id}
+                  </DialogTitle>
+                </DialogHeader>
+
+                {/* Emergency detail */}
+                <div className="rounded-xl border border-border/60 bg-muted/30 p-4 text-sm space-y-2">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    <div><span className="text-xs text-muted-foreground uppercase">Hiker</span><p className="font-semibold">{e.hiker_name}</p></div>
+                    <div><span className="text-xs text-muted-foreground uppercase">Type</span><p className="font-semibold">{e.emergency_type ?? "-"}</p></div>
+                    <div><span className="text-xs text-muted-foreground uppercase">Status</span><p><StatusBadge status={e.status} /></p></div>
+                    <div><span className="text-xs text-muted-foreground uppercase">Time</span><p className="text-muted-foreground text-xs">{fmt(e.created_at)}</p></div>
+                    {(e.latitude !== null || e.longitude !== null) && (
+                      <div className="col-span-2"><span className="text-xs text-muted-foreground uppercase">Coordinates</span><p className="font-mono text-xs">{formatCoord(e.latitude)}, {formatCoord(e.longitude)}</p></div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Resolution notes */}
+                {e.resolution_notes && (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                    <p className="mb-1 text-xs font-semibold uppercase text-emerald-600 dark:text-emerald-400">Resolution Report</p>
+                    <p className="text-sm text-foreground">{e.resolution_notes}</p>
+                  </div>
+                )}
+
+                {/* Conversation thread */}
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase text-muted-foreground">
+                    Guider Communication ({thread.length} messages)
+                  </p>
+                  {thread.length === 0 ? (
+                    <p className="py-6 text-center text-xs italic text-muted-foreground">No communication recorded.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {thread.map((msg) => (
+                        <div key={msg.id} className={`flex ${msg.sender === "admin" ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${msg.sender === "admin" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}>
+                            <p className="mb-1 text-[10px] font-semibold opacity-70">{msg.sender_name} · {msg.sender === "guider" ? "Guider" : "Admin"}</p>
+                            <p>{msg.message}</p>
+                            <p className="mt-1 text-right text-[10px] opacity-50">{fmt(msg.created_at)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
